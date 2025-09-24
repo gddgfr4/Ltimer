@@ -540,6 +540,7 @@
       distInput.placeholder = e.target.checked ? '自動計算' : 'レスト距離(m)';
       if(e.target.checked) distInput.value='';
     });
+    document.getElementById('pm-start-btn').onclick = startPacemakerSession;
     function startPacemakerSession(){
       const distance = parseInt(document.getElementById('pm-distance').value)||0;
       const lapDistance = parseInt(document.getElementById('pm-lap-distance').value)||400; // ★追加：ラップ距離を取得
