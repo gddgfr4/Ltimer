@@ -235,379 +235,379 @@
   </div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      /* ==================================
-       * Firebase & 共有設定
-       * ================================== */
-    
-      // ▼▼▼ ステップ1でコピーした、あなた自身のFirebase設定情報をここに貼り付けてください ▼▼▼
-      const firebaseConfig = {
-      apiKey: "AIzaSyBNp2KN5z3ztejZB_-ZOcU8GdgsqNryyVg",
-      authDomain: "ltimer-5959a.firebaseapp.com",
-      databaseURL: "https://ltimer-5959a-default-rtdb.firebaseio.com",
-      projectId: "ltimer-5959a",
-      storageBucket: "ltimer-5959a.firebasestorage.app",
-      messagingSenderId: "1092398779393",
-      appId: "1:1092398779393:web:7f78c518df7fd08370c400",
-      measurementId: "G-T9PTZJ1B92"
+  document.addEventListener('DOMContentLoaded', () => {
+    /* ==================================
+     * Firebase & 共有設定
+     * ================================== */
+  
+    // ▼▼▼ ステップ1でコピーした、あなた自身のFirebase設定情報をここに貼り付けてください ▼▼▼
+    const firebaseConfig = {
+    apiKey: "AIzaSyBNp2KN5z3ztejZB_-ZOcU8GdgsqNryyVg",
+    authDomain: "ltimer-5959a.firebaseapp.com",
+    databaseURL: "https://ltimer-5959a-default-rtdb.firebaseio.com",
+    projectId: "ltimer-5959a",
+    storageBucket: "ltimer-5959a.firebasestorage.app",
+    messagingSenderId: "1092398779393",
+    appId: "1:1092398779393:web:7f78c518df7fd08370c400",
+    measurementId: "G-T9PTZJ1B92"
+  };
+    // ▲▲▲ ここまで ▲▲▲
+  
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+  
+    let sessionRef = null; // Firebaseのセッション（部屋）への参照
+    let watches = [];      // ローカルのStopwatchデータ
+    let userId = null;     // ユーザー1かユーザー2か
+    let sessionPasscode = '';
+  
+    /* ==================================
+     * 画面要素の取得
+     * ================================== */
+    const screens = {
+      share:   document.getElementById('screen-share'),
+      chooser: document.getElementById('screen-chooser'),
+      split:   document.getElementById('screen-split'),
+      pm:      document.getElementById('screen-pm'),
+      custom:  document.getElementById('screen-custom'),
     };
-      // ▲▲▲ ここまで ▲▲▲
-    
-      firebase.initializeApp(firebaseConfig);
-      const database = firebase.database();
-    
-      let sessionRef = null; // Firebaseのセッション（部屋）への参照
-      let watches = [];      // ローカルのStopwatchデータ
-      let userId = null;     // ユーザー1かユーザー2か
-      let sessionPasscode = '';
-    
-      /* ==================================
-       * 画面要素の取得
-       * ================================== */
-      const screens = {
-        share:   document.getElementById('screen-share'),
-        chooser: document.getElementById('screen-chooser'),
-        split:   document.getElementById('screen-split'),
-        pm:      document.getElementById('screen-pm'),
-        custom:  document.getElementById('screen-custom'),
-      };
-      const backWrap = document.getElementById('back');
-      let currentScreen = 'share';
-    
-      // 共有関連UI
-      const shareControls = document.getElementById('share-controls');
-      const standaloneControls = document.getElementById('standalone-controls');
-      const shareStatus = document.getElementById('share-status');
-      const readyBtn1 = document.getElementById('share-ready-btn-1');
-      const readyBtn2 = document.getElementById('share-ready-btn-2');
-    
-      /* ==================================
-       * 画面遷移と表示ロジック
-       * ================================== */
-      function showScreen(screenName) {
-        Object.values(screens).forEach(el => el.classList.add('hidden'));
-        screens[screenName].classList.remove('hidden');
-        currentScreen = screenName;
-        backWrap.classList.toggle('hidden', ['share', 'chooser'].includes(screenName));
-        if (screenName === 'split') recalibrateSplitLayout();
+    const backWrap = document.getElementById('back');
+    let currentScreen = 'share';
+  
+    // 共有関連UI
+    const shareControls = document.getElementById('share-controls');
+    const standaloneControls = document.getElementById('standalone-controls');
+    const shareStatus = document.getElementById('share-status');
+    const readyBtn1 = document.getElementById('share-ready-btn-1');
+    const readyBtn2 = document.getElementById('share-ready-btn-2');
+  
+    /* ==================================
+     * 画面遷移と表示ロジック
+     * ================================== */
+    function showScreen(screenName) {
+      Object.values(screens).forEach(el => el.classList.add('hidden'));
+      screens[screenName].classList.remove('hidden');
+      currentScreen = screenName;
+      backWrap.classList.toggle('hidden', ['share', 'chooser'].includes(screenName));
+      if (screenName === 'split') recalibrateSplitLayout();
+    }
+  
+    // 初期表示
+    showScreen('share');
+  
+    /* ==================================
+     * 共有モード接続処理
+     * ================================== */
+    document.getElementById('share-connect-btn').onclick = () => {
+      sessionPasscode = document.getElementById('share-passcode').value.trim();
+      if (!sessionPasscode) {
+        alert('合言葉を入力してください');
+        return;
       }
-    
-      // 初期表示
-      showScreen('share');
-    
-      /* ==================================
-       * 共有モード接続処理
-       * ================================== */
-      document.getElementById('share-connect-btn').onclick = () => {
-        sessionPasscode = document.getElementById('share-passcode').value.trim();
-        if (!sessionPasscode) {
-          alert('合言葉を入力してください');
+      connectToSession();
+    };
+  
+    document.getElementById('share-standalone-btn').onclick = () => {
+      showScreen('chooser');
+    };
+  
+    function connectToSession() {
+      sessionRef = database.ref('sessions/' + sessionPasscode);
+  
+      // トランザクションでユーザーIDを割り当てる
+      sessionRef.child('users').transaction(currentUsers => {
+        currentUsers = currentUsers || {};
+        if (!currentUsers.user1) {
+          userId = 'user1';
+          currentUsers.user1 = { connected: true, ready: false };
+        } else if (!currentUsers.user2) {
+          userId = 'user2';
+          currentUsers.user2 = { connected: true, ready: false };
+        } else {
+          // 満員の場合
+          return; // Abort transaction
+        }
+        return currentUsers;
+      }).then(result => {
+        if (!result.committed || !userId) {
+          alert('このセッションは満員です。');
+          sessionRef = null;
           return;
         }
-        connectToSession();
-      };
-    
-      document.getElementById('share-standalone-btn').onclick = () => {
-        showScreen('chooser');
-      };
-    
-      function connectToSession() {
-        sessionRef = database.ref('sessions/' + sessionPasscode);
-    
-        // トランザクションでユーザーIDを割り当てる
-        sessionRef.child('users').transaction(currentUsers => {
-          currentUsers = currentUsers || {};
-          if (!currentUsers.user1) {
-            userId = 'user1';
-            currentUsers.user1 = { connected: true, ready: false };
-          } else if (!currentUsers.user2) {
-            userId = 'user2';
-            currentUsers.user2 = { connected: true, ready: false };
-          } else {
-            // 満員の場合
-            return; // Abort transaction
-          }
-          return currentUsers;
-        }).then(result => {
-          if (!result.committed || !userId) {
-            alert('このセッションは満員です。');
-            sessionRef = null;
-            return;
-          }
-          
-          // 接続が切れたら自分のステータスを更新する
-          const myUserRef = sessionRef.child('users').child(userId);
-          myUserRef.onDisconnect().update({ connected: false, ready: false });
-    
-          // データの監視を開始
-          listenToSessionChanges();
-          
-          showScreen('chooser');
-        });
-      }
-    
-      /* ==================================
-       * Firebaseデータ監視
-       * ================================== */
-      function listenToSessionChanges() {
-        sessionRef.on('value', (snapshot) => {
-          if (!snapshot.exists()) {
-            // セッションがリセットされた場合など
-            return;
-          }
-          const sessionData = snapshot.val();
-    
-          // 1. ユーザー状態の更新
-          updateUsersStatusUI(sessionData.users);
-    
-          // 2. Stopwatchデータの更新
-          const newWatches = sessionData.watches || [];
-          if (JSON.stringify(watches) !== JSON.stringify(newWatches)) {
-            watches = newWatches;
-            if(currentScreen === 'split') {
-                renderSplit();
-            }
-          }
-        });
-      }
-    
-      function updateUsersStatusUI(users) {
-        users = users || {};
-        const user1 = users.user1 || { connected: false, ready: false };
-        const user2 = users.user2 || { connected: false, ready: false };
-    
-        // ステータスメッセージ
-        if (user1.connected && user2.connected) {
-          shareStatus.textContent = `接続完了 (合言葉: ${sessionPasscode})`;
-          shareStatus.className = 'text-green-600';
-        } else {
-          shareStatus.textContent = '相手の接続を待っています...';
-          shareStatus.className = 'text-yellow-600';
-        }
-    
-        // 準備ボタン1
-        readyBtn1.textContent = `ユーザー1: ${user1.ready ? '準備OK' : '準備中'}`;
-        readyBtn1.className = `w-full py-1 rounded ${user1.ready ? 'bg-green-500 text-white' : 'border-2 border-gray-400'}`;
         
-        // 準備ボタン2
-        readyBtn2.textContent = `ユーザー2: ${user2.ready ? '準備OK' : '準備中'}`;
-        readyBtn2.className = `w-full py-1 rounded ${user2.ready ? 'bg-green-500 text-white' : 'border-2 border-gray-400'}`;
-      }
-    
-      /* ==================================
-       * Firebaseデータ書き込み
-       * ================================== */
-      function syncWatchesToFirebase() {
-        if (sessionRef) {
-          sessionRef.child('watches').set(watches);
+        // 接続が切れたら自分のステータスを更新する
+        const myUserRef = sessionRef.child('users').child(userId);
+        myUserRef.onDisconnect().update({ connected: false, ready: false });
+  
+        // データの監視を開始
+        listenToSessionChanges();
+        
+        showScreen('chooser');
+      });
+    }
+  
+    /* ==================================
+     * Firebaseデータ監視
+     * ================================== */
+    function listenToSessionChanges() {
+      sessionRef.on('value', (snapshot) => {
+        if (!snapshot.exists()) {
+          // セッションがリセットされた場合など
+          return;
         }
+        const sessionData = snapshot.val();
+  
+        // 1. ユーザー状態の更新
+        updateUsersStatusUI(sessionData.users);
+  
+        // 2. Stopwatchデータの更新
+        const newWatches = sessionData.watches || [];
+        if (JSON.stringify(watches) !== JSON.stringify(newWatches)) {
+          watches = newWatches;
+          if(currentScreen === 'split') {
+              renderSplit();
+          }
+        }
+      });
+    }
+  
+    function updateUsersStatusUI(users) {
+      users = users || {};
+      const user1 = users.user1 || { connected: false, ready: false };
+      const user2 = users.user2 || { connected: false, ready: false };
+  
+      // ステータスメッセージ
+      if (user1.connected && user2.connected) {
+        shareStatus.textContent = `接続完了 (合言葉: ${sessionPasscode})`;
+        shareStatus.className = 'text-green-600';
+      } else {
+        shareStatus.textContent = '相手の接続を待っています...';
+        shareStatus.className = 'text-yellow-600';
       }
-    
-      readyBtn1.onclick = () => { if(userId === 'user1') toggleReady(); };
-      readyBtn2.onclick = () => { if(userId === 'user2') toggleReady(); };
-    
-      function toggleReady() {
-        if (!sessionRef || !userId) return;
-        const myReadyRef = sessionRef.child('users').child(userId).child('ready');
-        myReadyRef.once('value', snapshot => {
-          myReadyRef.set(!snapshot.val());
-        });
+  
+      // 準備ボタン1
+      readyBtn1.textContent = `ユーザー1: ${user1.ready ? '準備OK' : '準備中'}`;
+      readyBtn1.className = `w-full py-1 rounded ${user1.ready ? 'bg-green-500 text-white' : 'border-2 border-gray-400'}`;
+      
+      // 準備ボタン2
+      readyBtn2.textContent = `ユーザー2: ${user2.ready ? '準備OK' : '準備中'}`;
+      readyBtn2.className = `w-full py-1 rounded ${user2.ready ? 'bg-green-500 text-white' : 'border-2 border-gray-400'}`;
+    }
+  
+    /* ==================================
+     * Firebaseデータ書き込み
+     * ================================== */
+    function syncWatchesToFirebase() {
+      if (sessionRef) {
+        sessionRef.child('watches').set(watches);
       }
+    }
+  
+    readyBtn1.onclick = () => { if(userId === 'user1') toggleReady(); };
+    readyBtn2.onclick = () => { if(userId === 'user2') toggleReady(); };
+  
+    function toggleReady() {
+      if (!sessionRef || !userId) return;
+      const myReadyRef = sessionRef.child('users').child(userId).child('ready');
+      myReadyRef.once('value', snapshot => {
+        myReadyRef.set(!snapshot.val());
+      });
+    }
+  
+    // マスターボタンの全体操作
+    function masterAction(action) {
+        if (!sessionRef) return; // 共有モードでなければ何もしない
+        
+        const allReady = (sessionRef.child('users/user1/ready').get() && sessionRef.child('users/user2/ready').get());
+        if (!allReady) {
+            // alert("両者が準備完了になるまで操作できません。");
+            // return;
+        }
+  
+        const now = Date.now();
+        if(action === 'start-all'){ 
+          watches.forEach(w => { if(!w.running){ w.running = true; w.start = now - w.elapsed; }}); 
+        }
+        if(action === 'stop-all'){ 
+          watches.forEach(w => w.running = false); 
+        }
+        if(action === 'reset-all'){
+          const anyRunning = watches.some(w=>w.running);
+          if(!anyRunning){
+              // REVIEW機能は共有モードでは一旦無効化
+              watches.forEach(w => { w.running = false; w.start = 0; w.elapsed = 0; w.lastLap = 0; w.laps = []; });
+          }
+        }
+        syncWatchesToFirebase();
+    }
+  
+    /* ==================================
+     * （ここから下は元のロジックとほぼ同じ）
+     * ただし、データ更新箇所で syncWatchesToFirebase() を呼ぶように変更
+     * ================================== */
+  
+    // モード選択
+    document.getElementById('choose-split').onclick = () => {
+      if (sessionRef) {
+        shareControls.classList.remove('hidden');
+        standaloneControls.classList.add('hidden');
+        initSplit(true); // 共有モードで初期化
+      } else {
+        shareControls.classList.add('hidden');
+        standaloneControls.classList.remove('hidden');
+        initSplit(false); // 通常モードで初期化
+      }
+      showScreen('split');
+    };
+    // (Pacemaker, Customは今回共有対象外)
+    document.getElementById('choose-pm').onclick = () => { initPacemaker(); showScreen('pm'); };
+    document.getElementById('choose-custom').onclick = () => { initCustom(); showScreen('custom'); };
+    backWrap.querySelector('button').onclick = () => { showScreen('chooser'); };
     
-      // マスターボタンの全体操作
-      function masterAction(action) {
-          if (!sessionRef) return; // 共有モードでなければ何もしない
-          
-          const allReady = (sessionRef.child('users/user1/ready').get() && sessionRef.child('users/user2/ready').get());
-          if (!allReady) {
-              // alert("両者が準備完了になるまで操作できません。");
-              // return;
+    // (Help, Audio, Utils, Summaryの各関数は変更なしのため省略... 元のコードをそのままここに貼り付けてください)
+    /* ====== Help ====== */
+    const help = { el: document.getElementById('help'), title: document.getElementById('help-title'), body: document.getElementById('help-body'), close: document.getElementById('help-close') };
+    const helpContent = { /* ... 元のコード ... */ };
+    function openHelp(mode){ /* ... 元のコード ... */ }
+    function closeHelp(){ help.el.classList.add('hidden'); }
+    help.close.onclick = closeHelp;
+    document.getElementById('help-split').onclick = ()=>openHelp('split');
+    document.getElementById('help-pm').onclick    = ()=>openHelp('pm');
+    document.getElementById('help-custom').onclick= ()=>openHelp('custom');
+    /* ====== Audio ====== */
+    let audioCtx; function initAudio(){ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } }
+    document.body.addEventListener('click', initAudio, {once:true});
+    function beep(f,ms){ if(!audioCtx) return; const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination); o.type='sine'; o.frequency.value=f; g.gain.value=0.1; o.start(); o.stop(audioCtx.currentTime+ms/1000); }
+    /* ====== Utils ====== */
+    const fmt=(ms,h=true)=>{ if(isNaN(ms)||ms<0) ms=0; const d=new Date(ms); const m=String(d.getUTCMinutes()); const s=String(d.getUTCSeconds()).padStart(2,'0'); if(!h) return `${m}:${s}`; const hnd=String(Math.floor(d.getUTCMilliseconds()/10)).padStart(2,'0'); return `${m}:${s}.${hnd}`; };
+    /* ====== Summary ====== */
+    const summary = { modal: document.getElementById('summary'), title: document.getElementById('summary-title'), table: document.getElementById('summary-table'), csv:   document.getElementById('summary-csv'), close: document.getElementById('summary-close'), data:  null, mode:  null };
+    function openSummary(){ summary.modal.classList.remove('hidden'); }
+    function closeSummary(){ summary.modal.classList.add('hidden'); }
+    summary.close.onclick = closeSummary;
+    function buildSplitSummary(data){ /* ... 元のコード ... */ }
+    function buildPmSummary(pm){ /* ... 元のコード ... */ }
+    summary.csv.onclick = ()=>{ /* ... 元のコード ... */ };
+  
+    /* ====== Split Mode ====== */
+    let rafId;
+    const splitGrid = document.getElementById('split-grid');
+  
+    function initSplit(isShared) {
+      // 共有モードの場合、最初のユーザーが時計を追加するまで待つ
+      if(isShared) {
+          if(userId === 'user1') {
+              // ユーザー1がセッションの初期状態を作成
+              watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}];
+              syncWatchesToFirebase();
           }
-    
-          const now = Date.now();
-          if(action === 'start-all'){ 
-            watches.forEach(w => { if(!w.running){ w.running = true; w.start = now - w.elapsed; }}); 
+          // ユーザー2はFirebaseからのデータ受信を待つので、ここでは何もしない
+      } else {
+          watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}];
+      }
+      renderSplit();
+    }
+  
+    function recalibrateSplitLayout(){ /* ... 元のコード ... */ }
+    window.addEventListener('resize', ()=>{ if(currentScreen==='split') recalibrateSplitLayout(); });
+  
+    function renderSplit(){
+      splitGrid.innerHTML = watches.map(sw=>{
+        let cum=0; const hist = sw.laps.map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
+          .map(h=>`<div class="hist-line"><span class="hist-n">${h.n}</span><span class="hist-lap">${fmt(h.lap)}</span><span class="hist-cum">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
+        return `<div class="split-card" id="w-${sw.id}">
+          <div class="split-card-header">
+            <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input p-1 bg-gray-100 rounded font-bold">
+            <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${sw.target>0?sw.target:''}" class="target-lap-input border-2 rounded">
+          </div>
+          <div class="split-main-time timer-font text-gray-900">${fmt(sw.elapsed)}</div>
+          <div class="split-lap-live timer-font" id="live-${sw.id}">${fmt(sw.elapsed - sw.lastLap)}</div>
+          <div class="split-lap-history">${hist}</div>
+          <div class="split-actions">
+            <button data-id="${sw.id}" data-action="start" class="btn-start text-white font-bold rounded ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
+            <button data-id="${sw.id}" data-action="lap" class="btn-lap text-white font-bold rounded bg-gray-700">LAP (${sw.laps.length+1})</button>
+          </div>
+        </div>`; }).join('');
+      recalibrateSplitLayout();
+      wireSplit();
+    }
+  
+    function wireSplit() {
+      // 入力
+      splitGrid.querySelectorAll('.target-lap-input,.split-name-input').forEach(el => {
+        el.onchange = (e) => { // oninputからonchangeに変更して頻度を減らす
+          const id = +e.target.dataset.id;
+          const sw = watches.find(w => w.id === id);
+          if (!sw) return;
+          if (e.target.classList.contains('target-lap-input')) sw.target = parseFloat(e.target.value) || 0;
+          else sw.name = e.target.value;
+          syncWatchesToFirebase();
+        }
+      });
+      // ボタン
+      splitGrid.querySelectorAll('button').forEach(btn => {
+        btn.onclick = (e) => {
+          const id = +e.currentTarget.dataset.id;
+          const action = e.currentTarget.dataset.action;
+          const sw = watches.find(w => w.id === id);
+          if (!sw) return;
+          if (action === 'start') {
+            sw.running = !sw.running;
+            if (sw.running) sw.start = Date.now() - sw.elapsed;
           }
-          if(action === 'stop-all'){ 
-            watches.forEach(w => w.running = false); 
-          }
-          if(action === 'reset-all'){
-            const anyRunning = watches.some(w=>w.running);
-            if(!anyRunning){
-                // REVIEW機能は共有モードでは一旦無効化
-                watches.forEach(w => { w.running = false; w.start = 0; w.elapsed = 0; w.lastLap = 0; w.laps = []; });
-            }
+          if (action === 'lap' && sw.running) {
+            const now = Date.now();
+            const lap = sw.elapsed - sw.lastLap;
+            sw.laps.push(lap);
+            sw.frozenLap = lap;
+            sw.freezeUntil = now + 3000;
+            sw.pendingLast = sw.elapsed;
           }
           syncWatchesToFirebase();
-      }
-    
-      /* ==================================
-       * （ここから下は元のロジックとほぼ同じ）
-       * ただし、データ更新箇所で syncWatchesToFirebase() を呼ぶように変更
-       * ================================== */
-    
-      // モード選択
-      document.getElementById('choose-split').onclick = () => {
-        if (sessionRef) {
-          shareControls.classList.remove('hidden');
-          standaloneControls.classList.add('hidden');
-          initSplit(true); // 共有モードで初期化
-        } else {
-          shareControls.classList.add('hidden');
-          standaloneControls.classList.remove('hidden');
-          initSplit(false); // 通常モードで初期化
         }
-        showScreen('split');
-      };
-      // (Pacemaker, Customは今回共有対象外)
-      document.getElementById('choose-pm').onclick = () => { initPacemaker(); showScreen('pm'); };
-      document.getElementById('choose-custom').onclick = () => { initCustom(); showScreen('custom'); };
-      backWrap.querySelector('button').onclick = () => { showScreen('chooser'); };
-      
-      // (Help, Audio, Utils, Summaryの各関数は変更なしのため省略... 元のコードをそのままここに貼り付けてください)
-      /* ====== Help ====== */
-      const help = { el: document.getElementById('help'), title: document.getElementById('help-title'), body: document.getElementById('help-body'), close: document.getElementById('help-close') };
-      const helpContent = { /* ... 元のコード ... */ };
-      function openHelp(mode){ /* ... 元のコード ... */ }
-      function closeHelp(){ help.el.classList.add('hidden'); }
-      help.close.onclick = closeHelp;
-      document.getElementById('help-split').onclick = ()=>openHelp('split');
-      document.getElementById('help-pm').onclick    = ()=>openHelp('pm');
-      document.getElementById('help-custom').onclick= ()=>openHelp('custom');
-      /* ====== Audio ====== */
-      let audioCtx; function initAudio(){ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } }
-      document.body.addEventListener('click', initAudio, {once:true});
-      function beep(f,ms){ if(!audioCtx) return; const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination); o.type='sine'; o.frequency.value=f; g.gain.value=0.1; o.start(); o.stop(audioCtx.currentTime+ms/1000); }
-      /* ====== Utils ====== */
-      const fmt=(ms,h=true)=>{ if(isNaN(ms)||ms<0) ms=0; const d=new Date(ms); const m=String(d.getUTCMinutes()); const s=String(d.getUTCSeconds()).padStart(2,'0'); if(!h) return `${m}:${s}`; const hnd=String(Math.floor(d.getUTCMilliseconds()/10)).padStart(2,'0'); return `${m}:${s}.${hnd}`; };
-      /* ====== Summary ====== */
-      const summary = { modal: document.getElementById('summary'), title: document.getElementById('summary-title'), table: document.getElementById('summary-table'), csv:   document.getElementById('summary-csv'), close: document.getElementById('summary-close'), data:  null, mode:  null };
-      function openSummary(){ summary.modal.classList.remove('hidden'); }
-      function closeSummary(){ summary.modal.classList.add('hidden'); }
-      summary.close.onclick = closeSummary;
-      function buildSplitSummary(data){ /* ... 元のコード ... */ }
-      function buildPmSummary(pm){ /* ... 元のコード ... */ }
-      summary.csv.onclick = ()=>{ /* ... 元のコード ... */ };
-    
-      /* ====== Split Mode ====== */
-      let rafId;
-      const splitGrid = document.getElementById('split-grid');
-    
-      function initSplit(isShared) {
-        // 共有モードの場合、最初のユーザーが時計を追加するまで待つ
-        if(isShared) {
-            if(userId === 'user1') {
-                // ユーザー1がセッションの初期状態を作成
-                watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}];
-                syncWatchesToFirebase();
-            }
-            // ユーザー2はFirebaseからのデータ受信を待つので、ここでは何もしない
-        } else {
-            watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}];
+      });
+  
+      // マスター（スタンドアローン用）
+      standaloneControls.querySelectorAll('button').forEach(b => {
+        b.onclick = (e) => {
+          const action = e.currentTarget.dataset.action;
+          if (action === 'add' && watches.length < 6) { /* ... */ }
+          if (action === 'remove' && watches.length > 1) { /* ... */ }
+          
+          // 以下のロジックは共有モードのmasterActionに似ているが、こちらはローカルのみ
+          if(action === 'start-all'){ /* ... */ }
+          if(action === 'stop-all'){ /* ... */ }
+          if(action === 'reset-all' && !watches.some(w=>w.running)){ /* ... */ }
+          renderSplit(); // ローカルなのでrenderを呼ぶ
         }
-        renderSplit();
-      }
-    
-      function recalibrateSplitLayout(){ /* ... 元のコード ... */ }
-      window.addEventListener('resize', ()=>{ if(currentScreen==='split') recalibrateSplitLayout(); });
-    
-      function renderSplit(){
-        splitGrid.innerHTML = watches.map(sw=>{
-          let cum=0; const hist = sw.laps.map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
-            .map(h=>`<div class="hist-line"><span class="hist-n">${h.n}</span><span class="hist-lap">${fmt(h.lap)}</span><span class="hist-cum">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
-          return `<div class="split-card" id="w-${sw.id}">
-            <div class="split-card-header">
-              <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input p-1 bg-gray-100 rounded font-bold">
-              <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${sw.target>0?sw.target:''}" class="target-lap-input border-2 rounded">
-            </div>
-            <div class="split-main-time timer-font text-gray-900">${fmt(sw.elapsed)}</div>
-            <div class="split-lap-live timer-font" id="live-${sw.id}">${fmt(sw.elapsed - sw.lastLap)}</div>
-            <div class="split-lap-history">${hist}</div>
-            <div class="split-actions">
-              <button data-id="${sw.id}" data-action="start" class="btn-start text-white font-bold rounded ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
-              <button data-id="${sw.id}" data-action="lap" class="btn-lap text-white font-bold rounded bg-gray-700">LAP (${sw.laps.length+1})</button>
-            </div>
-          </div>`; }).join('');
-        recalibrateSplitLayout();
-        wireSplit();
-      }
-    
-      function wireSplit() {
-        // 入力
-        splitGrid.querySelectorAll('.target-lap-input,.split-name-input').forEach(el => {
-          el.onchange = (e) => { // oninputからonchangeに変更して頻度を減らす
-            const id = +e.target.dataset.id;
-            const sw = watches.find(w => w.id === id);
-            if (!sw) return;
-            if (e.target.classList.contains('target-lap-input')) sw.target = parseFloat(e.target.value) || 0;
-            else sw.name = e.target.value;
-            syncWatchesToFirebase();
-          }
-        });
-        // ボタン
-        splitGrid.querySelectorAll('button').forEach(btn => {
-          btn.onclick = (e) => {
-            const id = +e.currentTarget.dataset.id;
-            const action = e.currentTarget.dataset.action;
-            const sw = watches.find(w => w.id === id);
-            if (!sw) return;
-            if (action === 'start') {
-              sw.running = !sw.running;
-              if (sw.running) sw.start = Date.now() - sw.elapsed;
-            }
-            if (action === 'lap' && sw.running) {
-              const now = Date.now();
-              const lap = sw.elapsed - sw.lastLap;
-              sw.laps.push(lap);
-              sw.frozenLap = lap;
-              sw.freezeUntil = now + 3000;
-              sw.pendingLast = sw.elapsed;
-            }
-            syncWatchesToFirebase();
-          }
-        });
-    
-        // マスター（スタンドアローン用）
-        standaloneControls.querySelectorAll('button').forEach(b => {
-          b.onclick = (e) => {
-            const action = e.currentTarget.dataset.action;
-            if (action === 'add' && watches.length < 6) { /* ... */ }
-            if (action === 'remove' && watches.length > 1) { /* ... */ }
-            
-            // 以下のロジックは共有モードのmasterActionに似ているが、こちらはローカルのみ
-            if(action === 'start-all'){ /* ... */ }
-            if(action === 'stop-all'){ /* ... */ }
-            if(action === 'reset-all' && !watches.some(w=>w.running)){ /* ... */ }
-            renderSplit(); // ローカルなのでrenderを呼ぶ
-          }
-        });
-      }
-    
-      function tickSplit() {
-        // tickはローカルでのみ実行。状態はFirebaseから同期される
-        const now = Date.now();
-        watches.forEach(sw => {
-          if (!sw.running) return;
-          sw.elapsed = now - sw.start;
-          const card = document.getElementById('w-' + sw.id);
-          if (!card) return;
-          // ... (UI更新ロジックは変更なし)
-        });
-      }
-    
-      /* ====== Pacemaker & Custom Timer (変更なし) ====== */
-      // ... 元のPacemakerとCustom Timerの全コードをここに貼り付けてください ...
-    
-      /* ====== RAF Loop ====== */
-      function loop() {
-        if (currentScreen === 'split') tickSplit();
-        else if (currentScreen === 'pm') updatePacemaker();
-        else if (currentScreen === 'custom') tickCustom();
-        requestAnimationFrame(loop);
-      }
-    
-      loop();
-    });
-    </script>
+      });
+    }
+  
+    function tickSplit() {
+      // tickはローカルでのみ実行。状態はFirebaseから同期される
+      const now = Date.now();
+      watches.forEach(sw => {
+        if (!sw.running) return;
+        sw.elapsed = now - sw.start;
+        const card = document.getElementById('w-' + sw.id);
+        if (!card) return;
+        // ... (UI更新ロジックは変更なし)
+      });
+    }
+  
+    /* ====== Pacemaker & Custom Timer (変更なし) ====== */
+    // ... 元のPacemakerとCustom Timerの全コードをここに貼り付けてください ...
+  
+    /* ====== RAF Loop ====== */
+    function loop() {
+      if (currentScreen === 'split') tickSplit();
+      else if (currentScreen === 'pm') updatePacemaker();
+      else if (currentScreen === 'custom') tickCustom();
+      requestAnimationFrame(loop);
+    }
+  
+    loop();
+  });
+  </script>
 </body>
 </html>
