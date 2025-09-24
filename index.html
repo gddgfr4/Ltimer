@@ -130,6 +130,40 @@
         /* 数字サイズ（動いている値を大きく） */
         .split-lap-live{ font-size: clamp(22px, 7.5vw, 36px); }
         .split-main-time{ font-size: clamp(20px, 6.5vw, 32px); }
+        /* 1カード=枠固定。中はグリッド。履歴だけスクロール */
+        .split-card{
+          height:100%;                /* ← gridAutoRowsの高さを丸ごと使う */
+          display:grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows:
+            auto   /* ヘッダー(名前+目標) */
+            auto   /* 合計タイム */
+            auto   /* 現在ラップ(強調) */
+            1fr    /* 履歴(ここだけスクロール) */
+            auto;  /* ボタン行 */
+          gap:6px;
+        }
+        .split-lap-history{
+          min-height:0;               /* ← 1frが縮めるために必要 */
+          overflow-y:auto;
+        }
+        
+        /* ボタンは高さ固定で形が変わらない */
+        .split-actions{ grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+        .split-actions button{ height:56px; }
+        
+        /* ヘッダー(名前+目標)は横並び固定 */
+        .split-card-header{
+          grid-column:1 / -1;
+          display:grid;
+          grid-template-columns: 1fr minmax(86px, 42%);
+          gap:6px; align-items:center;
+        }
+        @media (max-width:430px){
+          .split-actions button{ height:52px; }
+          .split-card{ gap:4px; }
+          .split-card-header{ grid-template-columns:1fr minmax(80px,48%); gap:4px; }
+        }
 
     </style>
 </head>
@@ -376,8 +410,25 @@
         renderSplitMode();
     }
     function setGridStyle(count) {
-        document.getElementById('split-grid').style.gridTemplateColumns = (count > 3) ? '1fr 1fr' : '1fr';
+      const grid = document.getElementById('split-grid');
+    
+      // 列数: 4台超→2列、それ以下→1列
+      const cols = (count > 3) ? 2 : 1;
+      grid.style.gridTemplateColumns = (cols === 2) ? '1fr 1fr' : '1fr';
+    
+      // 利用可能な縦サイズから、段数ごとの行高(px)を計算
+      const container = document.getElementById('container-split');            // 画面内のSplit領域
+      const controlsH = document.getElementById('split-master-controls').offsetHeight || 60;
+      const gridPadding = 8;            // .split-grid の上下パディング(約)
+      const gap = 4;                    // 行間ギャップ
+    
+      const availableH = container.clientHeight - controlsH - gridPadding*2;  // グリッドに割り当てられる高さ
+      const rows = Math.ceil(count / cols);
+      const rowHeight = Math.max(180, Math.floor((availableH - (rows-1)*gap) / rows)); // 最低180pxを確保
+    
+      grid.style.gridAutoRows = `${rowHeight}px`;   // ← これで各カードの高さが固定
     }
+
     function renderSplitMode() {
       const grid = document.getElementById('split-grid');
       setGridStyle(splitWatches.length);
