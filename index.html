@@ -53,14 +53,19 @@
         .summary-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         .summary-table th, .summary-table td { border: 1px solid #d1d5db; padding: 0.5rem; text-align: center; }
         .summary-table th { background-color: #f3f4f6; }
-        /* 時計やラップ表示を画面に合わせて縮小拡大 */
-        #custom-runner-time { font-size: clamp(48px, 16vw, 120px); }
-        .split-card .text-3xl, .pm-lane .text-3xl { font-size: clamp(22px, 7vw, 34px); }
-        .split-card .text-2xl, .pm-lane .text-xl { font-size: clamp(16px, 5vw, 24px); }
+        /* ---- iOS安全領域 & スクロール抑止 ---- */
+        .content-container { padding-bottom: env(safe-area-inset-bottom); }
+        .header { padding-top: env(safe-area-inset-top); }
         
-        /* 履歴部分だけスクロール許可 */
-        .pm-lane-history { max-height: 4.8em; overflow-y: auto; }
-        .split-lap-history { max-height: 8em; overflow-y: auto; }
+        /* グリッドを等倍~縮小でフィットさせる */
+        .fit-scale {
+          transform-origin: top left;
+          will-change: transform;
+        }
+        
+        /* グリッド自身はスクロールさせない。履歴だけ個別スクロール */
+        #split-grid, #pm-runner-grid { overflow: hidden; }
+
 
     </style>
 </head>
@@ -169,6 +174,27 @@
         }
     }
     document.body.addEventListener('click', initAudioContext, { once: true });
+    // ---- 画面に収めるためのスケーラー ----
+    // container: 外側(高さ基準) / grid: 内側(縮小対象)
+    function fitGridToContainer(container, grid) {
+      if (!container || !grid) return;
+      // まず等倍に戻してから計測
+      grid.classList.add('fit-scale');
+      grid.style.transform = 'scale(1)';
+      // レイアウト確定後に実測
+      const ch = container.clientHeight;
+      const gh = grid.scrollHeight; // グリッドの必要高さ
+      const scaleH = ch > 0 ? Math.min(1, ch / gh) : 1;
+    
+      const cw = container.clientWidth;
+      const gw = grid.scrollWidth;
+      const scaleW = cw > 0 ? Math.min(1, cw / gw) : 1;
+    
+      const scale = Math.min(scaleH, scaleW, 1);
+      grid.style.transform = `scale(${scale})`;
+      // 余白が出るとクリックがずれるのを防ぐため高さを固定
+      //（スケール後に見える面積＝コンテナの内側、overflowはhidden）
+    }
 
     function playBeep(freq, duration) {
         if (!audioContext) return;
