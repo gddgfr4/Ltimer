@@ -73,6 +73,30 @@
         @media (max-width:430px){
           .split-card-header .target-lap-input{ width:45%; }
         }
+        /* ---- Split: ヘッダーに「時計名＋目標(sec)」を横並びで安定表示 ---- */
+        .split-card-header{
+          display: grid;
+          grid-template-columns: 1fr minmax(86px, 42%);
+          gap: 6px;
+          align-items: center;
+        }
+        .split-card-header .split-name-input{
+          min-width: 0; text-align: left; /* 長い名前でも折り返してはみ出さない */
+        }
+        .split-card-header .target-lap-input{
+          min-width: 0; text-align: center; padding: 4px 6px;
+        }
+        
+        /* 画面が狭い(=2列になるケースが多い)ときは少しタイトに */
+        @media (max-width: 430px) {
+          .split-card { padding: 6px; }
+          .split-card-header{
+            grid-template-columns: 1fr minmax(84px, 48%);
+            gap: 4px;
+          }
+          .split-card .text-3xl { font-size: clamp(20px, 6vw, 30px); }
+          .split-card .text-2xl { font-size: clamp(16px, 5vw, 22px); }
+        }
 
     </style>
 </head>
@@ -322,9 +346,22 @@
         document.getElementById('split-grid').style.gridTemplateColumns = (count > 3) ? '1fr 1fr' : '1fr';
     }
     function renderSplitMode() {
-        const grid = document.getElementById('split-grid');
-        setGridStyle(splitWatches.length);
-        grid.innerHTML = splitWatches.map(sw => `
+      const grid = document.getElementById('split-grid');
+      setGridStyle(splitWatches.length);
+    
+      grid.innerHTML = splitWatches.map(sw => {
+        // 合計タイムを一緒に出すために、ここで累積を計算
+        let cum = 0;
+        const histHtml = sw.laps.length > 0
+          ? sw.laps.map((lap,i) => { cum += lap; return { n:i+1, lap, cum }; })
+                 .slice().reverse() // 新しい順に表示
+                 .map(h => `<div>
+                     <span class="font-bold">${h.n}</span>: ${formatTime(h.lap)}
+                     <span class="text-gray-500">（${formatTime(h.cum)}）</span>
+                   </div>`).join('')
+          : '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
+    
+        return `
           <div class="split-card" id="watch-${sw.id}">
             <div class="split-card-header col-span-2">
               <input type="text" value="${sw.name}" data-id="${sw.id}"
@@ -333,39 +370,31 @@
                      value="${sw.targetLapSeconds > 0 ? sw.targetLapSeconds : ''}"
                      class="target-lap-input p-1 border-2 rounded-md">
             </div>
-        
+    
             <div class="split-main-time text-center text-3xl font-bold timer-font text-gray-800">
               ${formatTime(sw.elapsed)}
             </div>
             <div class="split-lap-time text-center font-bold text-2xl timer-font text-gray-600">
               ${formatTime(sw.elapsed - sw.lastLapTime)}
             </div>
-        
-            <div class="split-lap-history">
-              ${sw.laps.length > 0
-                ? sw.laps.slice().reverse().map((l, i) =>
-                    `<div><span class="font-bold">${sw.laps.length - i}</span>: ${formatTime(l)}</div>`
-                  ).join('')
-                : '<p class="text-xs text-center text-gray-400">ラップ履歴</p>'
-              }
-            </div>
-        
+    
+            <div class="split-lap-history">${histHtml}</div>
+    
             <button data-id="${sw.id}" data-action="start-stop"
                     class="py-2 text-white font-bold rounded-md text-lg ${sw.running ? 'bg-red-500' : 'bg-green-500'}">
               ${sw.running ? 'STOP' : 'START'}
             </button>
-        
+    
             <button data-id="${sw.id}" data-action="lap"
                     class="py-2 text-white font-bold rounded-md text-lg bg-gray-700">
               LAP (${sw.laps.length + 1})
             </button>
-          </div>
-        `).join('');
-
-        renderMasterControls();
-        fitSplitGridHeight();
-
+          </div>`;
+      }).join('');
+    
+      renderMasterControls();
     }
+
     function renderMasterControls() {
         const controlsContainer = document.getElementById('split-master-controls');
         const anyRunning = splitWatches.some(sw => sw.running);
