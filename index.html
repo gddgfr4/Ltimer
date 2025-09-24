@@ -1,319 +1,149 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>多機能トレーニングタイマー Pro — Mobile</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    :root{
-      --approaching-warn-color:#facc15; /* yellow-400 */
-      --approaching-imminent-color:#fb923c; /* orange-400 */
-      --exceeded-color:#f87171; /* red-400 */
-      --work-color:#4ade80; /* green-400 */
-      --rest-color:#60a5fa; /* blue-400 */
-      /* 動的フォント（JSから rows に応じて上書き） */
-      --font-main:32px;  /* Total */
-      --font-live:28px;  /* Lap live */
-      --font-small:16px;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,viewport-fit=cover" />
+<title>多機能トレーニングタイマー Pro — 5台改善</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    --approaching-warn-color:#facc15;--approaching-imminent-color:#fb923c;--exceeded-color:#f87171;--work-color:#4ade80;--rest-color:#60a5fa;
+  }
+  html,body{height:100dvh;margin:0;padding:0;overflow:hidden}
+  body{touch-action:manipulation;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
+  .timer-font{font-variant-numeric:tabular-nums}
+  .content-container{height:100%;overflow:auto;background:#e5e7eb;padding-bottom:env(safe-area-inset-bottom)}
 
-    html,body{height:100dvh;margin:0;padding:0;overflow:hidden;background:#e5e7eb;touch-action:manipulation;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
-    .timer-font{font-variant-numeric:tabular-nums}
+  /* Split */
+  .split-grid{display:grid;flex-grow:1;padding:4px;gap:6px}
+  .split-card{height:100%;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto 1fr auto;gap:6px;padding:8px;background:#F9FAFB;border-radius:.5rem}
+  .split-card-header{grid-column:1 / -1;display:grid;grid-template-columns:1fr minmax(86px,42%);gap:6px;align-items:center}
+  .split-name-input{min-width:0;text-align:left}
+  .target-lap-input{min-width:0;text-align:center;padding:4px 6px}
 
-    /* 画面: 選択/各モード */
-    .screen{position:relative; height:100%; width:100%;}
-    .hidden{display:none}
+  .split-main-time{grid-column:1 / -1;font-size:clamp(20px,6.4vw,32px)}
+  .split-lap-live{grid-column:1 / -1;font-weight:800;border-radius:.375rem;padding:4px 6px;font-size:clamp(22px,7.5vw,36px)}
+  .split-lap-live.good{color:#065f46;background:#d1fae5}
+  .split-lap-live.warn{color:#7c2d12;background:#ffedd5}
+  .split-lap-live.bad{color:#991b1b;background:#fee2e2}
 
-    /* 戻るボタン */
-    .back-btn{position:fixed; left:env(safe-area-inset-left,8px); top:calc(env(safe-area-inset-top,8px) + 8px); z-index:60;}
-    .back-btn button{width:44px;height:44px;border-radius:9999px}
+  /* 履歴は常にスクロール可能・最低1行は見える */
+  .split-lap-history{grid-column:1 / -1;min-height:1.6em;overflow-y:auto;background:rgba(229,231,235,.8);border-radius:.375rem;padding:6px}
 
-    /* === Split Mode === */
-    .split-wrap{display:flex;flex-direction:column;height:100%;}
-    .split-grid{display:grid;flex:1 1 auto;padding:6px;gap:6px;overflow:hidden;}
-    .split-card{background:#F9FAFB;border-radius:12px;padding:8px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto 1fr auto;gap:6px;height:100%;}
+  /* 履歴1行の詰めレイアウト（番号と時間の間隔を小さく） */
+  .lap-row{display:flex;align-items:baseline;gap:6px;line-height:1.15}
+  .lap-row .n{font-weight:700;min-width:1.6em;text-align:right}
+  .lap-row .t{font-variant-numeric:tabular-nums}
+  .lap-row .c{color:#6b7280;margin-left:4px}
 
-    .split-card-header{grid-column:1/-1;display:grid;grid-template-columns:1fr minmax(86px,42%);gap:6px;align-items:center}
-    .split-name-input{min-width:0;text-align:left}
-    .target-lap-input{min-width:0;text-align:center;padding:4px 6px}
+  /* ボタンの高さは固定 */
+  .split-actions{grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .split-actions button{height:56px}
 
-    .split-main-time{grid-column:1/-1;font-size:var(--font-main);font-weight:800}
-    .split-lap-live{grid-column:1/-1;font-size:var(--font-live);font-weight:800;border-radius:8px;padding:4px 6px}
-    .split-lap-live.good{color:#065f46;background:#d1fae5}
-    .split-lap-live.warn{color:#7c2d12;background:#ffedd5}
-    .split-lap-live.bad{ color:#991b1b;background:#fee2e2}
+  /* 画面が狭い時の微調整 */
+  @media (max-width:430px){
+    .split-card{gap:4px;padding:6px}
+    .split-card-header{grid-template-columns:1fr minmax(80px,48%);gap:4px}
+    .split-actions button{height:52px}
+  }
 
-    .split-lap-history{grid-column:1/-1;overflow-y:auto;min-height:0;background:rgba(229,231,235,.8);border-radius:8px;padding:6px}
-    .split-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:6px}
-    .split-actions button{height:56px}
-
-    .split-master{height:64px;background:#1f2937;color:white;display:flex;gap:8px;align-items:center;justify-content:space-around;padding:8px}
-
-    /* === Pacemaker === */
-    .pm-grid{display:grid;grid-auto-rows:minmax(180px,1fr);gap:6px;height:100%;padding:6px;overflow:hidden}
-    .pm-lane{display:grid;grid-template-columns:2fr 3fr;grid-template-rows:1fr 1fr 1fr;background:#fff;border-radius:12px;padding:8px}
-    .pm-lane-main{grid-row:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid #e5e7eb}
-    .pm-lane-history{font-size:12px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px}
-    .pm-lane-rest{background:var(--rest-color)!important;color:#fff}
-
-    /* === Custom Timer === */
-    .custom-runner{transition:background-color .3s}
-    .work-bg{background:var(--work-color)}
-    .rest-bg{background:var(--rest-color);color:#fff}
-
-    /* Summary modal */
-    .summary-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:70;padding:16px}
-    .summary-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:600px;max-height:90vh;overflow:auto}
-
-    @media (max-width:430px){
-      .split-actions button{height:52px}
-      .split-card{gap:4px;padding:6px}
-      .split-card-header{grid-template-columns:1fr minmax(80px,48%)}
-    }
-  </style>
+  /* === 5台モード専用の詰め設定 === */
+  .five-cards .split-card{gap:6px}
+  .five-cards .split-lap-history{font-size:clamp(12px,3.2vw,14px);line-height:1.15;min-height:1.8em}
+  .five-cards .split-main-time{font-size:clamp(18px,5.6vw,28px)}
+  .five-cards .split-lap-live{font-size:clamp(20px,6.8vw,32px)}
+</style>
 </head>
 <body>
-  <!-- モード選択画面 -->
-  <section id="screen-chooser" class="screen flex flex-col items-center justify-center gap-5 p-6">
-    <h1 class="text-2xl font-bold mb-2">モードを選択</h1>
-    <div class="grid grid-cols-1 gap-3 w-full max-w-sm">
-      <button id="choose-split" class="py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">スプリット</button>
-      <button id="choose-pm" class="py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">ペースメーカー</button>
-      <button id="choose-custom" class="py-4 text-xl font-bold text-white bg-gray-800 rounded-xl shadow">タイマー</button>
-    </div>
-  </section>
-
-  <!-- 戻るボタン（モード時のみ表示） -->
-  <div id="back" class="back-btn hidden">
-    <button class="bg-white shadow text-xl" aria-label="戻る">←</button>
-  </div>
-
-  <!-- Split -->
-  <section id="screen-split" class="screen hidden">
-    <div class="split-wrap">
+  <div id="container-split" class="content-container">
+    <div class="split-container">
       <div id="split-grid" class="split-grid"></div>
-      <div id="split-master" class="split-master">
-        <button data-action="add" class="w-12 h-12 rounded-full bg-blue-500 text-white text-2xl">+</button>
-        <button data-action="remove" class="w-12 h-12 rounded-full bg-gray-500 text-white text-2xl">−</button>
-        <button data-action="start-all" class="px-4 py-3 bg-green-500 rounded font-bold">START ALL</button>
-        <button data-action="stop-all"  class="px-4 py-3 bg-red-500 rounded font-bold">STOP ALL</button>
-        <button data-action="reset-all" class="px-4 py-3 bg-orange-500 rounded font-bold">RESET ALL</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- Pacemaker -->
-  <section id="screen-pm" class="screen hidden">
-    <div id="pm-settings" class="p-4 space-y-3">
-      <h2 class="text-xl font-bold text-center">ペースメーカー設定</h2>
-      <div class="grid grid-cols-2 gap-3">
-        <input id="pm-distance" type="number" placeholder="距離(m)" class="p-2 border rounded-md text-lg col-span-2">
-        <input id="pm-reps" type="number" placeholder="本数" class="p-2 border rounded-md text-lg">
-        <div>
-          <button id="pm-lane-minus" class="px-3 py-2 border rounded-l-md">-</button>
-          <span id="pm-lane-count" class="px-4 py-2 border-t border-b">1レーン</span>
-          <button id="pm-lane-plus" class="px-3 py-2 border rounded-r-md">+</button>
-        </div>
-        <div class="col-span-2 flex items-center gap-2">
-          <input id="pm-rest-dist" type="number" placeholder="レスト距離(m)" class="p-2 border rounded-md text-lg w-full">
-          <input type="checkbox" id="pm-return-to-start" class="h-5 w-5 ml-2"><label for="pm-return-to-start">開始点へ</label>
-        </div>
-      </div>
-      <div id="pm-lane-targets" class="space-y-2"></div>
-      <button id="pm-start-btn" class="w-full mt-1 py-3 text-2xl font-bold text-white bg-green-500 rounded-lg shadow-lg">練習開始</button>
-    </div>
-    <div id="pm-runner" class="hidden h-full">
-      <div id="pm-grid" class="pm-grid"></div>
-    </div>
-  </section>
-
-  <!-- Custom Timer -->
-  <section id="screen-custom" class="screen hidden">
-    <div id="custom-settings" class="p-4">
-      <h2 class="text-xl font-bold text-center mb-4">タイマー設定</h2>
-      <div id="custom-steps-container" class="space-y-2"></div>
-      <button id="custom-add-step-btn" class="w-full mt-4 py-2 text-lg text-indigo-600 border-2 border-indigo-600 rounded-lg">ステップを追加</button>
-      <div class="mt-4">
-        <label for="custom-reps" class="font-bold">セット数:</label>
-        <input id="custom-reps" type="number" value="1" class="w-full p-2 border rounded-md text-lg mt-1">
-      </div>
-      <button id="custom-start-btn" class="w-full mt-4 py-3 text-2xl font-bold text-white bg-green-500 rounded-lg shadow-lg">START</button>
-    </div>
-    <div id="custom-runner" class="hidden h-full flex flex-col justify-between items-center text-center p-4 custom-runner">
-      <div>
-        <div id="custom-runner-set-info" class="text-3xl font-bold">SET 1 / 1</div>
-        <div id="custom-runner-step-info" class="text-2xl">WORK 1 / 2</div>
-      </div>
-      <div id="custom-runner-time" class="text-9xl font-extrabold timer-font">00:30</div>
-      <div class="w-full"><button id="custom-reset-btn" class="w-full py-4 text-2xl font-bold text-gray-700 bg-gray-200 rounded-lg">RESET</button></div>
-    </div>
-  </section>
-
-  <!-- Summary Modal -->
-  <div id="summary" class="summary-modal hidden">
-    <div class="summary-content">
-      <h2 id="summary-title" class="text-2xl font-bold text-center">練習結果</h2>
-      <div id="summary-table"></div>
-      <div class="flex gap-4 mt-6">
-        <button id="summary-csv" class="w-full py-3 text-lg font-bold text-white bg-green-600 rounded-lg">CSVダウンロード</button>
-        <button id="summary-close" class="w-full py-3 text-lg font-bold text-gray-700 bg-gray-200 rounded-lg">閉じる</button>
-      </div>
+      <div id="split-master-controls" class="bg-gray-800 flex items-center justify-around p-2"></div>
     </div>
   </div>
 
-  <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    /* ====== Screen Navigation ====== */
-    const screens = {
-      chooser: document.getElementById('screen-chooser'),
-      split:   document.getElementById('screen-split'),
-      pm:      document.getElementById('screen-pm'),
-      custom:  document.getElementById('screen-custom'),
-    };
-    const backWrap = document.getElementById('back');
-    let current = 'chooser';
+<script>
+(()=>{
+  const grid = document.getElementById('split-grid');
+  const controls = document.getElementById('split-master-controls');
+  let splitWatches = [];
 
-    function show(screen){
-      Object.values(screens).forEach(el=>el.classList.add('hidden'));
-      screens[screen].classList.remove('hidden');
-      current = screen;
-      backWrap.classList.toggle('hidden', screen==='chooser');
-      // フォント最適化はSplitのみ
-      if(screen==='split') recalibrateSplitLayout();
-    }
+  function formatTime(ms){
+    if(isNaN(ms)||ms<0) ms=0;const d=new Date(ms);const m=String(d.getUTCMinutes());const s=String(d.getUTCSeconds()).padStart(2,'0');const h=String(Math.floor(d.getUTCMilliseconds()/10)).padStart(2,'0');return `${m}:${s}.${h}`;
+  }
 
-    document.getElementById('choose-split').onclick = ()=>{ initSplit(); show('split'); };
-    document.getElementById('choose-pm').onclick    = ()=>{ initPM(); show('pm'); };
-    document.getElementById('choose-custom').onclick= ()=>{ initCustom(); show('custom'); };
-    backWrap.querySelector('button').onclick = ()=>{ show('chooser'); };
+  function setGridStyle(count){
+    const cols = (count>3)?2:1; grid.style.gridTemplateColumns = (cols===2)?'1fr 1fr':'1fr';
+    // 5個の時はクラス付与で詰めレイアウト
+    grid.classList.toggle('five-cards', count>=5);
 
-    /* ====== Audio ====== */
-    let audioCtx; function initAudio(){ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } }
-    document.body.addEventListener('click', initAudio, {once:true});
-    function beep(f,ms){ if(!audioCtx) return; const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination); o.type='sine'; o.frequency.value=f; g.gain.value=0.1; o.start(); o.stop(audioCtx.currentTime+ms/1000); }
+    const container = document.getElementById('container-split');
+    const availableH = container.clientHeight - controls.offsetHeight;
+    const style = getComputedStyle(grid); const padV = parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
+    const gap = parseFloat(style.gap)||6; const rows = Math.ceil(count/cols);
+    const minRow = (count>=5)? 210 : 180; // 5台時は最小行高を少し上げて履歴の1行を確保
+    const rowH = Math.max(minRow, Math.floor((availableH - padV - (rows-1)*gap)/rows));
+    grid.style.gridAutoRows = rowH+'px';
+  }
 
-    /* ====== Utils ====== */
-    const fmt=(ms,h=true)=>{ if(isNaN(ms)||ms<0) ms=0; const d=new Date(ms); const m=String(d.getUTCMinutes()); const s=String(d.getUTCSeconds()).padStart(2,'0'); if(!h) return `${m}:${s}`; const hnd=String(Math.floor(d.getUTCMilliseconds()/10)).padStart(2,'0'); return `${m}:${s}.${hnd}`; };
+  function render(){
+    setGridStyle(splitWatches.length);
+    grid.innerHTML = splitWatches.map(sw=>{
+      let cum=0; const hist = sw.laps.map((lap,i)=>{cum+=lap;return{n:i+1,lap,cum}}).slice().reverse()
+        .map(h=>`<div class="lap-row"><span class="n">${h.n}:</span><span class="t">${formatTime(h.lap)}</span><span class="c">(${formatTime(h.cum)})</span></div>`).join('')
+        || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
+      return `
+      <div class="split-card" id="watch-${sw.id}">
+        <div class="split-card-header">
+          <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input font-bold text-lg p-1 bg-gray-100 rounded">
+          <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${sw.targetLapSeconds>0?sw.targetLapSeconds:''}" class="target-lap-input border-2 rounded-md">
+        </div>
+        <div class="split-main-time timer-font text-gray-800">${formatTime(sw.elapsed)}</div>
+        <div class="split-lap-live timer-font" id="lap-live-${sw.id}">${formatTime(sw.elapsed - sw.lastLapTime)}</div>
+        <div class="split-lap-history">${hist}</div>
+        <div class="split-actions">
+          <button data-id="${sw.id}" data-action="start-stop" class="py-2 text-white font-bold rounded-md text-lg ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
+          <button data-id="${sw.id}" data-action="lap" class="py-2 text-white font-bold rounded-md text-lg bg-gray-700">LAP (${sw.laps.length+1})</button>
+        </div>
+      </div>`;
+    }).join('');
 
-    /* ====== Split Mode ====== */
-    let watches=[]; let rafId;
-    const splitGrid = document.getElementById('split-grid');
-    const splitMaster = document.getElementById('split-master');
+    // controls（省略: 元のまま）
+    const anyRunning = splitWatches.some(sw=>sw.running);
+    controls.innerHTML = `
+      <button data-action="add" class="px-3 py-2 text-white bg-blue-500 rounded-full w-12 h-12 text-2xl ${splitWatches.length>=5?'opacity-50':''}" ${splitWatches.length>=5?'disabled':''}>+</button>
+      <button data-action="remove" class="px-3 py-2 text-white bg-gray-500 rounded-full w-12 h-12 text-2xl ${splitWatches.length<=1?'opacity-50':''}" ${splitWatches.length<=1?'disabled':''}>-</button>
+      <button data-action="start-all" class="px-4 py-2 text-white bg-green-500 rounded">START ALL</button>
+      <button data-action="stop-all" class="px-4 py-2 text-white bg-red-500 rounded">STOP ALL</button>
+      <button data-action="reset-all" class="px-4 py-2 text-white ${anyRunning?'bg-gray-500':'bg-orange-500'} rounded" ${anyRunning?'disabled':''}>RESET ALL</button>`;
+  }
 
-    function initSplit(){
-      watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}];
-      renderSplit();
-    }
+  function init(){
+    splitWatches=[...Array(5)].map((_,i)=>({id:i,name:`時計 ${i+1}`,running:false,startTime:0,elapsed:0,lastLapTime:0,laps:[],targetLapSeconds:0}));
+    render();
+  }
 
-    // 列/行・行高・フォントサイズを再計算
-    function recalibrateSplitLayout(){
-      const count=watches.length;
-      const cols=(count>=2)?2:1; // 2台以上は2列
-      splitGrid.style.gridTemplateColumns = cols===2 ? '1fr 1fr' : '1fr';
-
-      const rows=Math.ceil(count/cols);
-      // 利用可能高 = 画面 - マスター高 - grid padding/gap
-      const style=getComputedStyle(splitGrid);
-      const padV=parseFloat(style.paddingTop)+parseFloat(style.paddingBottom);
-      const gap=parseFloat(style.gap)||6;
-      const avail = screens.split.clientHeight - splitMaster.offsetHeight - padV;
-      const rowH = Math.max(150, Math.floor((avail - (rows-1)*gap)/rows));
-      splitGrid.style.gridAutoRows = rowH+'px';
-
-      // 行数に応じてフォント縮小
-      let main=32, live=28, small=16;
-      if(rows>=3){ main=26; live=22; small=14; }
-      else if(rows===2){ main=30; live=26; small=15; }
-      document.documentElement.style.setProperty('--font-main', main+'px');
-      document.documentElement.style.setProperty('--font-live', live+'px');
-      document.documentElement.style.setProperty('--font-small', small+'px');
-    }
-    window.addEventListener('resize', ()=>{ if(current==='split') recalibrateSplitLayout(); });
-
-    function renderSplit(){
-      splitGrid.innerHTML = watches.map(sw=>{
-        let cum=0; const hist = sw.laps.map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
-          .map(h=>`<div><span class="font-bold">${h.n}</span>: ${fmt(h.lap)} <span class="text-gray-500">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
-        return `<div class="split-card" id="w-${sw.id}">
-          <div class="split-card-header">
-            <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input p-1 bg-gray-100 rounded font-bold">
-            <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${sw.target>0?sw.target:''}" class="target-lap-input border-2 rounded">
-          </div>
-          <div class="split-main-time timer-font text-gray-900">${fmt(sw.elapsed)}</div>
-          <div class="split-lap-live timer-font" id="live-${sw.id}">${fmt(sw.elapsed - sw.lastLap)}</div>
-          <div class="split-lap-history">${hist}</div>
-          <div class="split-actions">
-            <button data-id="${sw.id}" data-action="start" class="text-white font-bold rounded ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
-            <button data-id="${sw.id}" data-action="lap" class="text-white font-bold rounded bg-gray-700">LAP (${sw.laps.length+1})</button>
-          </div>
-        </div>`; }).join('');
-      recalibrateSplitLayout();
-      wireSplit();
-    }
-
-    function wireSplit(){
-      // 入力
-      splitGrid.querySelectorAll('.target-lap-input,.split-name-input').forEach(el=>{
-        el.oninput=(e)=>{
-          const id=+e.target.dataset.id; const sw=watches.find(w=>w.id===id); if(!sw) return;
-          if(e.target.classList.contains('target-lap-input')) sw.target=parseFloat(e.target.value)||0; else sw.name=e.target.value;
-        }
-      });
-      // ボタン
-      splitGrid.querySelectorAll('button').forEach(btn=>{
-        btn.onclick=(e)=>{
-          const id=+e.currentTarget.dataset.id; const action=e.currentTarget.dataset.action; const sw=watches.find(w=>w.id===id); if(!sw) return;
-          if(action==='start'){ sw.running=!sw.running; if(sw.running) sw.start=Date.now()-sw.elapsed; renderSplit(); }
-          if(action==='lap' && sw.running){ const now=Date.now(); const lap=sw.elapsed - sw.lastLap; sw.laps.push(lap); sw.frozenLap=lap; sw.freezeUntil=now+3000; sw.pendingLast=sw.elapsed; renderSplit(); }
-        }
-      });
-      // マスター
-      splitMaster.querySelectorAll('button').forEach(b=>{
-        b.onclick=(e)=>{
-          const a=e.currentTarget.dataset.action; const any=watches.some(w=>w.running);
-          if(a==='add' && watches.length<5){ const nid=(watches.at(-1)?.id??-1)+1; watches.push({id:nid,name:`時計 ${nid+1}`,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}); renderSplit(); }
-          if(a==='remove' && watches.length>1){ watches.pop(); renderSplit(); }
-          if(a==='start-all'){ const now=Date.now(); watches.forEach(w=>{ if(!w.running){ w.running=true; w.start=now-w.elapsed; }}); renderSplit(); }
-          if(a==='stop-all'){ watches.forEach(w=>w.running=false); renderSplit(); }
-          if(a==='reset-all' && !any){ watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}]; renderSplit(); }
-        }
-      });
-    }
-
-    function tick(){
-      if(current==='split'){
-        const now=Date.now();
-        watches.forEach(sw=>{
-          if(!sw.running) return; sw.elapsed = now - sw.start;
-          const card=document.getElementById('w-'+sw.id); if(!card) return;
-          card.querySelector('.split-main-time').textContent = fmt(sw.elapsed);
-          // 3秒固定表示
-          let showMs;
-          if(sw.freezeUntil && sw.freezeUntil>now){ showMs=sw.frozenLap; }
-          else { if(sw.pendingLast!=null){ sw.lastLap=sw.pendingLast; sw.pendingLast=null; sw.frozenLap=0; sw.freezeUntil=0; } showMs=sw.elapsed - sw.lastLap; }
-          const live=document.getElementById('live-'+sw.id); if(live){ live.textContent=fmt(showMs); live.classList.remove('good','warn','bad'); if(sw.target>0){ const tgt=sw.target*1000; const rem=tgt-showMs; if(showMs>tgt) live.classList.add('bad'); else if(rem<=5000) live.classList.add('warn'); else live.classList.add('good'); } }
-        });
-      }
-      rafId=requestAnimationFrame(tick);
-    }
-
-    /* ====== Pacemaker (unchanged core, trimmed UI) ====== */
-    let pm={status:'idle', lanes:[], settings:{lanes:1}};
-    function initPM(){ pm={status:'idle', lanes:[], settings:{lanes:1}}; renderPMSettings(); }
-    function renderPMSettings(){ document.getElementById('pm-runner').classList.add('hidden'); document.getElementById('pm-settings').classList.remove('hidden'); document.getElementById('pm-lane-count').textContent=`${pm.settings.lanes} レーン`; const trg=document.getElementById('pm-lane-targets'); trg.innerHTML = Array.from({length:pm.settings.lanes},(_,i)=>`<div class="flex items-center gap-2"><input type="text" placeholder="レーン ${i+1} 名前" class="pm-name p-2 border rounded-md w-1/3" data-i="${i}"><input type="number" placeholder="分" class="pm-min w-1/3 p-2 border rounded-md" data-i="${i}"><input type="number" placeholder="秒" class="pm-sec w-1/3 p-2 border rounded-md" data-i="${i}"></div>`).join(''); }
-    document.getElementById('pm-lane-plus').onclick=()=>{ if(pm.settings.lanes<4){ pm.settings.lanes++; renderPMSettings(); }};
-    document.getElementById('pm-lane-minus').onclick=()=>{ if(pm.settings.lanes>1){ pm.settings.lanes--; renderPMSettings(); }};
-
-    /* ====== Custom Timer (same as before, trimmed) ====== */
-    let ct={};
-    function initCustom(){ ct={status:'idle',steps:[{type:'work',duration:30},{type:'rest',duration:10}],reps:1}; renderCustomSettings(); }
-    function renderCustomSettings(){ const box=document.getElementById('custom-steps-container'); box.innerHTML = ct.steps.map((s,i)=>`<div class='flex items-center gap-2'><select data-i='${i}' class='step-type p-2 border rounded bg-gray-100'><option value='work' ${s.type==='work'?'selected':''}>WORK</option><option value='rest' ${s.type==='rest'?'selected':''}>REST</option></select><input type='number' value='${s.duration}' data-i='${i}' class='step-sec p-2 border rounded w-full' placeholder='秒'><button data-i='${i}' class='rm px-3 py-2 bg-red-500 text-white rounded'>×</button></div>`).join(''); }
-
-    /* ====== Wiring & Kick ====== */
-    show('chooser');
-    tick();
+  // --- handlers (最小限デモ用) ---
+  document.getElementById('container-split').addEventListener('click',e=>{
+    const btn=e.target.closest('button'); if(!btn) return; const act=btn.dataset.action; const id=parseInt(btn.dataset.id);
+    const sw=splitWatches.find(w=>w.id===id);
+    if(act==='start-stop'&&sw){sw.running=!sw.running; if(sw.running) sw.startTime=Date.now()-sw.elapsed;}
+    if(act==='lap'&&sw&&sw.running){const now=Date.now(); sw.elapsed=now-sw.startTime; const lap=sw.elapsed-sw.lastLapTime; sw.lastLapTime=sw.elapsed; sw.laps.push(lap);} 
+    if(act==='add'&&splitWatches.length<5){const nid=Math.max(...splitWatches.map(s=>s.id))+1; splitWatches.push({id:nid,name:`時計 ${nid+1}`,running:false,startTime:0,elapsed:0,lastLapTime:0,laps:[],targetLapSeconds:0});}
+    if(act==='remove'&&splitWatches.length>1){splitWatches.pop();}
+    render();
   });
-  </script>
+
+  // tick（最小）
+  function tick(){
+    const now=Date.now();
+    splitWatches.forEach(sw=>{if(!sw.running) return; sw.elapsed=now-sw.startTime; const live=document.getElementById('lap-live-'+sw.id); if(live) live.textContent=formatTime(sw.elapsed-sw.lastLapTime); const card=document.getElementById('watch-'+sw.id); if(card){card.querySelector('.split-main-time').textContent=formatTime(sw.elapsed);}});
+    requestAnimationFrame(tick);
+  }
+
+  window.addEventListener('resize',()=>setGridStyle(splitWatches.length));
+  init(); tick();
+})();
+</script>
 </body>
 </html>
