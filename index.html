@@ -87,6 +87,12 @@
     .summary-table th,.summary-table td{border:1px solid #d1d5db;padding:6px;text-align:center}
     .summary-table th{background:#f3f4f6}
 
+    /* Help modal */
+    .help-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:80;padding:16px}
+    .help-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
+    .help-content h3{font-weight:700;margin-top:12px}
+    .help-content ul{list-style:disc;padding-left:1.25rem}
+
     @media (max-width:430px){
       .split-card{gap:4px;padding:6px}
       .split-card-header{grid-template-columns:1fr minmax(80px,48%)}
@@ -98,9 +104,18 @@
   <section id="screen-chooser" class="screen flex flex-col items-center justify-center gap-5 p-6">
     <h1 class="text-2xl font-bold mb-2">モードを選択</h1>
     <div class="grid grid-cols-1 gap-3 w-full max-w-sm">
-      <button id="choose-split" class="py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">ペース走</button>
-      <button id="choose-pm" class="py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">インターバル</button>
-      <button id="choose-custom" class="py-4 text-xl font-bold text-white bg-gray-800 rounded-xl shadow">タイマー</button>
+      <div class="grid grid-cols-3 gap-2">
+        <button id="choose-split" class="col-span-2 py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">スプリット</button>
+        <button id="help-split" class="py-2 text-sm font-bold text-indigo-700 bg-indigo-50 rounded-xl border border-indigo-200">説明</button>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <button id="choose-pm" class="col-span-2 py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">ペースメーカー</button>
+        <button id="help-pm" class="py-2 text-sm font-bold text-green-700 bg-green-50 rounded-xl border border-green-200">説明</button>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <button id="choose-custom" class="col-span-2 py-4 text-xl font-bold text-white bg-gray-800 rounded-xl shadow">タイマー</button>
+        <button id="help-custom" class="py-2 text-sm font-bold text-gray-700 bg-gray-50 rounded-xl border border-gray-200">説明</button>
+      </div>
     </div>
   </section>
 
@@ -126,7 +141,7 @@
   <!-- Pacemaker -->
   <section id="screen-pm" class="screen hidden">
     <div id="pm-settings" class="p-4 space-y-3">
-      <h2 class="text-xl font-bold text-center">インターバル設定</h2>
+      <h2 class="text-xl font-bold text-center">ペースメーカー設定</h2>
       <div class="grid grid-cols-2 gap-3">
         <input id="pm-distance" type="number" placeholder="距離(m)" class="p-2 border rounded-md text-lg col-span-2">
         <input id="pm-reps" type="number" placeholder="本数" class="p-2 border rounded-md text-lg">
@@ -182,6 +197,17 @@
     </div>
   </div>
 
+  <!-- Help Modal -->
+  <div id="help" class="help-modal hidden">
+    <div class="help-content">
+      <div class="flex items-center justify-between">
+        <h2 id="help-title" class="text-2xl font-bold">使い方</h2>
+        <button id="help-close" class="px-3 py-1 bg-gray-200 rounded">閉じる</button>
+      </div>
+      <div id="help-body" class="mt-3 text-sm leading-relaxed"></div>
+    </div>
+  </div>
+
   <script>
   document.addEventListener('DOMContentLoaded', () => {
     /* ====== Screen Navigation ====== */
@@ -207,6 +233,79 @@
     document.getElementById('choose-custom').onclick= ()=>{ initCustom(); show('custom'); };
     backWrap.querySelector('button').onclick = ()=>{ show('chooser'); };
 
+    /* ====== Help ====== */
+    const help = {
+      el: document.getElementById('help'),
+      title: document.getElementById('help-title'),
+      body: document.getElementById('help-body'),
+      close: document.getElementById('help-close')
+    };
+
+    const helpContent = {
+      split: `
+        <p class="text-base">スプリットは複数の個別ストップウォッチです。</p>
+        <h3>設定の仕方</h3>
+        <ul>
+          <li>各カード上部の「目標(sec)」に1ラップ目標を秒で入力。</li>
+          <li>下マスターの + / − で時計を追加/削除（最大6）。</li>
+          <li>RESET & REVIEW で振り返り表を表示し、全リセット。</li>
+        </ul>
+        <h3>色付けの原理</h3>
+        <ul>
+          <li>目標未設定: 無色。</li>
+          <li>目標まで残り ≤10s: カード全体が淡い黄（注意）。</li>
+          <li>残り ≤5s: 橙（かなり接近）。</li>
+          <li>超過: 赤（超過）。</li>
+        </ul>
+        <h3>特殊な動き</h3>
+        <ul>
+          <li>LAP後はそのラップを3秒間固定表示。</li>
+          <li>START ALL / STOP ALL で全体制御。</li>
+        </ul>
+      `,
+      pm: `
+        <p class="text-base">ペースメーカーは距離×本数の練習で、レーンごとに目標を管理します。</p>
+        <h3>設定の仕方</h3>
+        <ul>
+          <li>距離(m)、本数、レーン数（±）を設定。</li>
+          <li>各レーンの「分」「秒」に1本の目標合計タイムを入力。</li>
+          <li>レスト距離を指定、または「開始点へ」で自動復帰（<code>400 - (距離 % 400)</code>）。</li>
+        </ul>
+        <h3>色付けの原理</h3>
+        <ul>
+          <li>次の通過目標に対し、残り ≤10s: 黄、≤5s: 橙、超過: 赤。</li>
+        </ul>
+        <h3>操作</h3>
+        <ul>
+          <li>START で1本開始、LAPで分割、NEXT REP で次の本へ。</li>
+          <li>全員終了で自動的に振り返り表を表示。</li>
+        </ul>
+      `,
+      custom: `
+        <p class="text-base">任意のWORK/RESTを並べてセットを回します。</p>
+        <h3>設定の仕方</h3>
+        <ul>
+          <li>ステップを追加し、各秒数とタイプを指定。</li>
+          <li>セット数を入力し、START。</li>
+        </ul>
+        <h3>色付け</h3>
+        <ul>
+          <li>WORK: 緑背景、REST: 青背景。</li>
+        </ul>
+      `
+    };
+
+    function openHelp(mode){
+      help.title.textContent = ({split:'スプリットの説明', pm:'ペースメーカーの説明', custom:'タイマーの説明'})[mode]||'説明';
+      help.body.innerHTML = helpContent[mode]||'';
+      help.el.classList.remove('hidden');
+    }
+    function closeHelp(){ help.el.classList.add('hidden'); }
+    help.close.onclick = closeHelp;
+    document.getElementById('help-split').onclick = ()=>openHelp('split');
+    document.getElementById('help-pm').onclick    = ()=>openHelp('pm');
+    document.getElementById('help-custom').onclick= ()=>openHelp('custom');
+
     /* ====== Audio ====== */
     let audioCtx; function initAudio(){ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } }
     document.body.addEventListener('click', initAudio, {once:true});
@@ -231,7 +330,7 @@
     summary.close.onclick = closeSummary;
 
     function buildSplitSummary(data){
-      summary.title.textContent = 'ペース走結果';
+      summary.title.textContent = 'スプリット結果';
       const rows = data.map(sw=>{
         const laps = sw.laps.map((l,i)=> `${i+1}: ${fmt(l)}`).join('<br>');
         return `<tr><td>${sw.name}</td><td>${fmt(sw.elapsed)}</td><td class="text-left">${laps}</td></tr>`;
@@ -241,11 +340,9 @@
 
     function buildPmSummary(pm){
       const {settings, lanes} = pm;
-      summary.title.textContent = `インターバル結果 (${settings.distance}m × ${settings.reps})`;
-      // rep毎にテーブル
+      summary.title.textContent = `ペースメーカー結果 (${settings.distance}m × ${settings.reps})`;
       let html = '';
       for(let rep=1; rep<=settings.reps; rep++){
-        // 見出し行: 距離
         const headerSplits = (lanes[0]?.fullLapHistory||[]).filter(h=>h.rep===rep).map(h=>h.dist);
         html += `<h3 class="mt-4 font-bold">${rep}本目</h3>`;
         html += `<table class="summary-table"><thead><tr><th>名前</th><th>Total</th>${headerSplits.map(d=>`<th>${d}m</th>`).join('')}</tr></thead><tbody>`;
@@ -270,7 +367,6 @@
         });
       } else if(summary.mode==='pm'){
         const {settings, lanes} = summary.data;
-        // flatten: rep, name, total, lap1..n
         for(let rep=1; rep<=settings.reps; rep++){
           const headerSplits = (lanes[0]?.fullLapHistory||[]).filter(h=>h.rep===rep).map(h=>h.dist);
           let header = ['Rep','Name','Total', ...headerSplits.map((d,i)=>`Lap ${i+1} (${d}m)`)].join('\t');
@@ -375,17 +471,15 @@
       splitMaster.querySelectorAll('button').forEach(b=>{
         b.onclick=(e)=>{
           const a=e.currentTarget.dataset.action; const any=watches.some(w=>w.running);
-          if(a==='add' && watches.length<5){ const nid=(watches.at(-1)?.id??-1)+1; watches.push({id:nid,name:`時計 ${nid+1}`,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}); renderSplit(); }
+          if(a==='add' && watches.length<6){ const nid=(watches.at(-1)?.id??-1)+1; watches.push({id:nid,name:`時計 ${nid+1}`,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}); renderSplit(); }
           if(a==='remove' && watches.length>1){ watches.pop(); renderSplit(); }
           if(a==='start-all'){ const now=Date.now(); watches.forEach(w=>{ if(!w.running){ w.running=true; w.start=now-w.elapsed; }}); renderSplit(); }
           if(a==='stop-all'){ watches.forEach(w=>w.running=false); renderSplit(); }
           if(a==='reset-all' && !any){
-            // 振り返りデータ作成
             summary.mode='split';
             summary.data = watches.map(w=>({name:w.name, elapsed:w.elapsed, laps:[...w.laps]}));
             buildSplitSummary(summary.data);
             openSummary();
-            // 初期化
             initSplit();
           }
         }
@@ -399,21 +493,18 @@
         if(!sw.running) return; sw.elapsed = now - sw.start;
         const card=document.getElementById('w-'+sw.id); if(!card) return;
         card.querySelector('.split-main-time').textContent = fmt(sw.elapsed);
-        // 3秒固定表示
         let showMs;
         if(sw.freezeUntil && sw.freezeUntil>now){ showMs=sw.frozenLap; }
         else { if(sw.pendingLast!=null){ sw.lastLap=sw.pendingLast; sw.pendingLast=null; sw.frozenLap=0; sw.freezeUntil=0; } showMs=sw.elapsed - sw.lastLap; }
         const live=document.getElementById('live-'+sw.id);
         if(live){ live.textContent=fmt(showMs); }
 
-        // 色付け（枠全体）
         card.classList.remove('frame-warn10','frame-warn5','frame-bad');
         if(sw.target>0){
           const tgt=sw.target*1000; const rem=tgt-showMs;
           if(showMs>tgt)          card.classList.add('frame-bad');
-          else if(rem<=5000)      card.classList.add('frame-warn5');   // ≤5s
-          else if(rem<=10000)     card.classList.add('frame-warn10');  // ≤10s
-          // それ以外（>10s）は無色
+          else if(rem<=5000)      card.classList.add('frame-warn5');
+          else if(rem<=10000)     card.classList.add('frame-warn10');
         }
       });
     }
@@ -483,7 +574,6 @@
     }
     document.getElementById('pm-start-btn').onclick = startPacemakerSession;
 
-    // 初期満足版の分割計算ロジック
     function calculateTargetSplits(settings, targetSec, rep){
       const { distance, restDist, returnToStart } = settings;
       if(distance<=0) return [];
@@ -538,7 +628,6 @@
         </div>`;
       }).join('');
 
-      // ボタン配線
       pmGrid.querySelectorAll('.pm-lap-btn').forEach(btn=>{
         btn.onclick=(e)=>{
           const laneId = +e.currentTarget.dataset.lane; handlePmLap(laneId);
@@ -604,7 +693,6 @@
         }
       }
 
-      // 全員終了→振り返り
       const allFinished = pmState.lanes.every(l=>l.status==='finished');
       if(allFinished){
         pmState.status='finished';
@@ -612,7 +700,6 @@
         summary.data = { settings: pmState.settings, lanes: pmState.lanes };
         buildPmSummary(summary.data);
         openSummary();
-        // 初期化して設定画面に戻す
         initPacemaker();
         show('pm');
         return;
@@ -629,7 +716,6 @@
 
     function initCustom(){ ct={status:'idle',steps:[{type:'work',duration:30},{type:'rest',duration:10}],reps:1,curRep:1,idx:0,start:0}; renderCustomSettings(); }
     function renderCustomSettings(){ customSettings.classList.remove('hidden'); customRunner.classList.add('hidden'); customBox.innerHTML = ct.steps.map((s,i)=>`<div class='flex items-center gap-2'><select data-i='${i}' class='step-type p-2 border rounded bg-gray-100'><option value='work' ${s.type==='work'?'selected':''}>WORK</option><option value='rest' ${s.type==='rest'?'selected':''}>REST</option></select><input type='number' value='${s.duration}' data-i='${i}' class='step-sec p-2 border rounded w-full' placeholder='秒'><button data-i='${i}' class='rm px-3 py-2 bg-red-500 text-white rounded'>×</button></div>`).join('');
-      // wire
       customBox.querySelectorAll('.step-type').forEach(el=> el.onchange=(e)=>{ ct.steps[+e.target.dataset.i].type = e.target.value; });
       customBox.querySelectorAll('.step-sec').forEach(el=> el.oninput=(e)=>{ ct.steps[+e.target.dataset.i].duration = parseInt(e.target.value)||0; });
       customBox.querySelectorAll('.rm').forEach(el=> el.onclick=(e)=>{ const i=+e.target.dataset.i; if(ct.steps.length>1){ ct.steps.splice(i,1); renderCustomSettings(); } });
