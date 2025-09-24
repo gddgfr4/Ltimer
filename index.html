@@ -64,7 +64,15 @@
         .split-card .text-3xl { font-size: clamp(20px, 6vw, 34px); }
         .split-card .text-2xl { font-size: clamp(16px, 5vw, 24px); }
         .split-card input, .split-card button { font-size: clamp(14px, 4.2vw, 18px); }
-
+        /* スプリット：タイトル横に目標ラップ入力を並べる */
+        .split-card-header{
+          display:flex; align-items:center; gap:6px;
+        }
+        .split-card-header .split-name-input{ flex:1 1 auto; }
+        .split-card-header .target-lap-input{ width:42%; min-width:110px; text-align:center; }
+        @media (max-width:430px){
+          .split-card-header .target-lap-input{ width:45%; }
+        }
 
     </style>
 </head>
@@ -307,7 +315,7 @@
     // --- Split Mode ---
     let splitWatches = [];
     function initSplitMode() {
-        splitWatches = [{ id: 0, name: '時計 1', running: false, startTime: 0, elapsed: 0, lastLapTime: 0, laps: [], targetLapSeconds: 0 }];
+        splitWatches = [{ id: 0, name: '時計 1', running: false, startTime: 0, elapsed: 0, lastLapTime: 0, laps: [], targetLapSeconds: 0, freezeUntil: 0, frozenLapTime: 0, pendingLastLapTime: null}];
         renderSplitMode();
     }
     function setGridStyle(count) {
@@ -316,15 +324,44 @@
     function renderSplitMode() {
         const grid = document.getElementById('split-grid');
         setGridStyle(splitWatches.length);
-        grid.innerHTML = splitWatches.map(sw => `<div class="split-card" id="watch-${sw.id}">
-                 <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input col-span-2 text-center font-bold text-lg p-1 bg-gray-100 rounded">
-                 <div class="split-main-time text-center text-3xl font-bold timer-font text-gray-800">${formatTime(sw.elapsed)}</div>
-                 <div class="split-lap-time text-center font-bold text-2xl timer-font text-gray-600">${formatTime(sw.elapsed - sw.lastLapTime)}</div>
-                 <div class="split-lap-history">${sw.laps.length > 0 ? sw.laps.slice().reverse().map((l, i) => `<div><span class="font-bold">${sw.laps.length - i}</span>: ${formatTime(l)}</div>`).join('') : '<p class="text-xs text-center text-gray-400">ラップ履歴</p>'}</div>
-                 <div class="col-span-2"><input type="number" data-id="${sw.id}" placeholder="目標ラップ(秒)" value="${sw.targetLapSeconds > 0 ? sw.targetLapSeconds : ''}" class="target-lap-input w-full p-1 text-center border-2 rounded-md"></div>
-                 <button data-id="${sw.id}" data-action="start-stop" class="py-2 text-white font-bold rounded-md text-lg ${sw.running ? 'bg-red-500' : 'bg-green-500'}">${sw.running ? 'STOP' : 'START'}</button>
-                 <button data-id="${sw.id}" data-action="lap" class="py-2 text-white font-bold rounded-md text-lg bg-gray-700">LAP</button>
-             </div>`).join('');
+        grid.innerHTML = splitWatches.map(sw => `
+          <div class="split-card" id="watch-${sw.id}">
+            <div class="split-card-header col-span-2">
+              <input type="text" value="${sw.name}" data-id="${sw.id}"
+                     class="split-name-input text-center font-bold text-lg p-1 bg-gray-100 rounded">
+              <input type="number" data-id="${sw.id}" placeholder="目標(sec)"
+                     value="${sw.targetLapSeconds > 0 ? sw.targetLapSeconds : ''}"
+                     class="target-lap-input p-1 border-2 rounded-md">
+            </div>
+        
+            <div class="split-main-time text-center text-3xl font-bold timer-font text-gray-800">
+              ${formatTime(sw.elapsed)}
+            </div>
+            <div class="split-lap-time text-center font-bold text-2xl timer-font text-gray-600">
+              ${formatTime(sw.elapsed - sw.lastLapTime)}
+            </div>
+        
+            <div class="split-lap-history">
+              ${sw.laps.length > 0
+                ? sw.laps.slice().reverse().map((l, i) =>
+                    `<div><span class="font-bold">${sw.laps.length - i}</span>: ${formatTime(l)}</div>`
+                  ).join('')
+                : '<p class="text-xs text-center text-gray-400">ラップ履歴</p>'
+              }
+            </div>
+        
+            <button data-id="${sw.id}" data-action="start-stop"
+                    class="py-2 text-white font-bold rounded-md text-lg ${sw.running ? 'bg-red-500' : 'bg-green-500'}">
+              ${sw.running ? 'STOP' : 'START'}
+            </button>
+        
+            <button data-id="${sw.id}" data-action="lap"
+                    class="py-2 text-white font-bold rounded-md text-lg bg-gray-700">
+              LAP (${sw.laps.length + 1})
+            </button>
+          </div>
+        `).join('');
+
         renderMasterControls();
         fitSplitGridHeight();
 
@@ -341,7 +378,12 @@
     function handleMasterAction(action) {
         if (action === 'add' && splitWatches.length < 5) {
             const newId = splitWatches.length > 0 ? Math.max(...splitWatches.map(sw => sw.id)) + 1 : 0;
-            splitWatches.push({ id: newId, name: `時計 ${newId+1}`, running: false, startTime: 0, elapsed: 0, lastLapTime: 0, laps: [], targetLapSeconds: 0 });
+            splitWatches.push({
+              id: newId, name: `時計 ${newId+1}`, running: false, startTime: 0, elapsed: 0,
+              lastLapTime: 0, laps: [], targetLapSeconds: 0,
+              freezeUntil: 0, frozenLapTime: 0, pendingLastLapTime: null
+            });
+
         } else if (action === 'remove' && splitWatches.length > 1) {
             splitWatches.pop();
         } else if (action === 'reset-all') {
@@ -392,24 +434,46 @@ function fitSplitGridHeight() {
 }
 
     function updateSplitMode() {
-        splitWatches.forEach(sw => {
-            if (!sw.running) return;
-            sw.elapsed = Date.now() - sw.startTime;
-            const card = document.getElementById(`watch-${sw.id}`);
-            if (!card) return;
-            card.querySelector('.split-main-time').textContent = formatTime(sw.elapsed);
-            card.querySelector('.split-lap-time').textContent = formatTime(sw.elapsed - sw.lastLapTime);
-            card.classList.remove('approaching-warn', 'approaching-imminent', 'exceeded');
-            if (sw.targetLapSeconds > 0) {
-                const currentLapMs = sw.elapsed - sw.lastLapTime;
-                const targetMs = sw.targetLapSeconds * 1000;
-                const remainingMs = targetMs - currentLapMs;
-                if (currentLapMs > targetMs) card.classList.add('exceeded');
-                else if (remainingMs <= 5000) card.classList.add('approaching-imminent');
-                else if (remainingMs <= 10000) card.classList.add('approaching-warn');
-            }
-        });
+      const now = Date.now();
+      splitWatches.forEach(sw => {
+        if (!sw.running) return;
+    
+        sw.elapsed = now - sw.startTime;
+        const card = document.getElementById(`watch-${sw.id}`);
+        if (!card) return;
+    
+        // 固定表示期間の管理
+        let lapDisplayMs;
+        if (sw.freezeUntil > now) {
+          // 固定表示中：ラップ表示は frozen 値のまま
+          lapDisplayMs = sw.frozenLapTime;
+        } else {
+          // 固定が終わった瞬間：ここで次ラップをスタート（lastLapTimeを進める）
+          if (sw.pendingLastLapTime != null) {
+            sw.lastLapTime = sw.pendingLastLapTime;
+            sw.pendingLastLapTime = null;
+            sw.frozenLapTime = 0;
+            sw.freezeUntil = 0;
+          }
+          lapDisplayMs = sw.elapsed - sw.lastLapTime;
+        }
+    
+        // 表示更新
+        card.querySelector('.split-main-time').textContent = formatTime(sw.elapsed);
+        card.querySelector('.split-lap-time').textContent  = formatTime(lapDisplayMs);
+    
+        // 目標ラップ到達の色分け（固定中も判定は継続）
+        card.classList.remove('approaching-warn', 'approaching-imminent', 'exceeded');
+        if (sw.targetLapSeconds > 0) {
+          const targetMs = sw.targetLapSeconds * 1000;
+          const remainingMs = targetMs - lapDisplayMs;
+          if (lapDisplayMs > targetMs) card.classList.add('exceeded');
+          else if (remainingMs <= 5000) card.classList.add('approaching-imminent');
+          else if (remainingMs <= 10000) card.classList.add('approaching-warn');
+        }
+      });
     }
+
     document.getElementById('container-split').addEventListener('input', e => {
         if (e.target.classList.contains('target-lap-input') || e.target.classList.contains('split-name-input')) {
             const id = parseInt(e.target.dataset.id);
@@ -432,10 +496,15 @@ function fitSplitGridHeight() {
             sw.running = !sw.running;
             if (sw.running) sw.startTime = Date.now() - sw.elapsed;
         } else if (action === 'lap') {
-            if(sw.running) {
-              sw.laps.push(sw.elapsed - sw.lastLapTime);
-              sw.lastLapTime = sw.elapsed;
-            }
+          if (sw.running) {
+            const now = Date.now();
+            const lapTime = sw.elapsed - sw.lastLapTime;  // 今のラップ所要
+            sw.laps.push(lapTime);                        // 履歴に確定
+            // 3秒間は“このラップ値”を表示固定し、その後リセット
+            sw.frozenLapTime = lapTime;
+            sw.freezeUntil = now + 3000;                  // 3秒固定
+            sw.pendingLastLapTime = sw.elapsed;           // 固定解除時にここへ切替
+          }
         }
         renderSplitMode();
     });
