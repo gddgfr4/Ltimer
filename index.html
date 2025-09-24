@@ -239,7 +239,23 @@
         if (currentMode === 'custom') updateCustomTimer();
         animationFrameId = requestAnimationFrame(tick);
     }
-    
+    let _fitTimer = null;
+window.addEventListener('resize', () => {
+  if (_fitTimer) cancelAnimationFrame(_fitTimer);
+  _fitTimer = requestAnimationFrame(() => {
+    // Split表示中
+    if (!containers.split.classList.contains('hidden')) {
+      fitGridToContainer(document.getElementById('container-split'),
+                         document.getElementById('split-grid'));
+    }
+    // Pacemaker表示中
+    if (!containers.pacemaker.classList.contains('hidden')) {
+      fitGridToContainer(document.getElementById('pm-runner'),
+                         document.getElementById('pm-runner-grid'));
+    }
+  });
+});
+
     summary.closeBtn.addEventListener('click', () => summary.modal.classList.add('hidden'));
     summary.csvBtn.addEventListener('click', () => {
         const data = sessionData[currentMode];
