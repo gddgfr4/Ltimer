@@ -289,4 +289,143 @@
       splitMaster.querySelectorAll('button').forEach(b=>{
         b.onclick=(e)=>{
           const a=e.currentTarget.dataset.action; const any=watches.some(w=>w.running);
-          if(a==='add' && watches.length<5){ const nid=(watches.at(-1)?.id??-1)+1; watches.push({id:nid,name:`時計 ${nid+1}`,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null});
+          if(a==='add' && watches.length<5){ const nid=(watches.at(-1)?.id??-1)+1; watches.push({id:nid,name:`時計 ${nid+1}`,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}); renderSplit(); }
+          if(a==='remove' && watches.length>1){ watches.pop(); renderSplit(); }
+          if(a==='start-all'){ const now=Date.now(); watches.forEach(w=>{ if(!w.running){ w.running=true; w.start=now-w.elapsed; }}); renderSplit(); }
+          if(a==='stop-all'){ watches.forEach(w=>w.running=false); renderSplit(); }
+          if(a==='reset-all' && !any){ watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0,freezeUntil:0,frozenLap:0,pendingLast:null}]; renderSplit(); }
+        }
+      });
+    }
+
+    /* Splitの毎フレーム更新 */
+    function tickSplit(){
+      const now=Date.now();
+      watches.forEach(sw=>{
+        if(!sw.running) return; sw.elapsed = now - sw.start;
+        const card=document.getElementById('w-'+sw.id); if(!card) return;
+        card.querySelector('.split-main-time').textContent = fmt(sw.elapsed);
+        // 3秒固定表示
+        let showMs;
+        if(sw.freezeUntil && sw.freezeUntil>now){ showMs=sw.frozenLap; }
+        else { if(sw.pendingLast!=null){ sw.lastLap=sw.pendingLast; sw.pendingLast=null; sw.frozenLap=0; sw.freezeUntil=0; } showMs=sw.elapsed - sw.lastLap; }
+        const live=document.getElementById('live-'+sw.id); if(live){ live.textContent=fmt(showMs); live.classList.remove('good','warn','bad'); if(sw.target>0){ const tgt=sw.target*1000; const rem=tgt-showMs; if(showMs>tgt) live.classList.add('bad'); else if(rem<=5000) live.classList.add('warn'); else live.classList.add('good'); } }
+      });
+    }
+
+    /* ====== Pacemaker ====== */
+    let pm={status:'idle', lanes:[], settings:{lanes:1}};
+    const pmSettings = document.getElementById('pm-settings');
+    const pmRunner   = document.getElementById('pm-runner');
+    const pmGrid     = document.getElementById('pm-grid');
+
+    function initPM(){ pm={status:'idle', lanes:[], settings:{lanes:1}}; renderPMSettings(); }
+    function renderPMSettings(){
+      pmRunner.classList.add('hidden'); pmSettings.classList.remove('hidden');
+      document.getElementById('pm-lane-count').textContent=`${pm.settings.lanes} レーン`;
+      const trg=document.getElementById('pm-lane-targets');
+      trg.innerHTML = Array.from({length:pm.settings.lanes},(_,i)=>
+        `<div class="flex items-center gap-2">
+          <input type="text" placeholder="レーン ${i+1} 名前" class="pm-name p-2 border rounded-md w-1/3" data-i="${i}">
+          <input type="number" placeholder="分" class="pm-min w-1/3 p-2 border rounded-md" data-i="${i}">
+          <input type="number" placeholder="秒" class="pm-sec w-1/3 p-2 border rounded-md" data-i="${i}">
+        </div>`).join('');
+    }
+    document.getElementById('pm-lane-plus').onclick=()=>{ if(pm.settings.lanes<4){ pm.settings.lanes++; renderPMSettings(); }};
+    document.getElementById('pm-lane-minus').onclick=()=>{ if(pm.settings.lanes>1){ pm.settings.lanes--; renderPMSettings(); }};
+
+    function startPM(){
+      const distance = parseInt(document.getElementById('pm-distance').value)||0;
+      const reps     = parseInt(document.getElementById('pm-reps').value)||1;
+      const names = Array.from(document.querySelectorAll('.pm-name')).map((el,i)=> el.value||`レーン ${i+1}`);
+      const targets = Array.from(document.querySelectorAll('.pm-min')).map((m,i)=> (parseInt(m.value)||0)*60 + (parseInt(document.querySelectorAll('.pm-sec')[i].value)||0));
+      if(distance<=0){ alert('距離を入力してください'); return; }
+      pm.settings={distance,reps,lanes:names.length};
+      pm.lanes = names.map((name,i)=>({id:i,name, targetSec:targets[i]||0, status:'ready', start:0, elapsed:0, lastLap:0, lapCount:0, splits:[], history:[]}));
+      pm.status='ready';
+      pmSettings.classList.add('hidden');
+      pmRunner.classList.remove('hidden');
+      renderPMRunner();
+    }
+    document.getElementById('pm-start-btn').onclick=startPM;
+
+    function renderPMRunner(){
+      pmGrid.innerHTML = pm.lanes.map(l=>{
+        const nextTxt = l.status==='finished' ? 'FINISHED' : (l.status==='rest' ? 'REST' : 'RUN');
+        return `<div class="pm-lane" id="lane-${l.id}">
+          <div class="pm-lane-main">
+            <div class="text-sm font-semibold">${l.name}</div>
+            <div class="text-3xl font-bold timer-font">${fmt(l.elapsed)}</div>
+            <div class="text-xl font-bold timer-font text-gray-500">Lap: ${fmt(l.elapsed - l.lastLap)}</div>
+          </div>
+          <div class="flex items-center justify-center">${nextTxt}</div>
+          <div class="pm-lane-history">${l.history.map(h=>`<span>${fmt(h)}</span>`).join('')}</div>
+          <div class="flex items-center justify-center">
+            <button class="pm-lap px-4 py-2 rounded text-white font-bold ${l.status==='running'?'bg-indigo-600':'bg-green-600'}" data-id="${l.id}">${l.status==='running'?'LAP':'START'}</button>
+          </div>
+        </div>`;}).join('');
+      pmGrid.querySelectorAll('.pm-lap').forEach(btn=>{
+        btn.onclick=(e)=>{
+          const id=+e.currentTarget.dataset.id; const l=pm.lanes.find(x=>x.id===id); if(!l) return; const now=Date.now();
+          if(l.status!=='running'){ l.status='running'; l.start=now - l.elapsed; l.lastLap=l.elapsed; }
+          else { // lap
+            const lap= l.elapsed - l.lastLap; l.history.push(lap); l.lastLap = l.elapsed; beep(880,120);
+          }
+          renderPMRunner();
+        }
+      });
+    }
+
+    function tickPM(){
+      if(pm.status==='idle' || pm.lanes.length===0) return;
+      const now=Date.now();
+      pm.lanes.forEach(l=>{ if(l.status==='running'){ l.elapsed= now - l.start; const el=document.getElementById('lane-'+l.id); if(el){ el.querySelector('.timer-font').textContent = fmt(l.elapsed); el.querySelectorAll('.timer-font')[1].textContent = 'Lap: '+fmt(l.elapsed - l.lastLap); } }});
+    }
+
+    /* ====== Custom Timer ====== */
+    let ct={};
+    const customBox = document.getElementById('custom-steps-container');
+    const customRunner = document.getElementById('custom-runner');
+    const customSettings = document.getElementById('custom-settings');
+    const customTime = document.getElementById('custom-runner-time');
+
+    function initCustom(){ ct={status:'idle',steps:[{type:'work',duration:30},{type:'rest',duration:10}],reps:1,curRep:1,idx:0,start:0}; renderCustomSettings(); }
+    function renderCustomSettings(){ customSettings.classList.remove('hidden'); customRunner.classList.add('hidden'); customBox.innerHTML = ct.steps.map((s,i)=>`<div class='flex items-center gap-2'><select data-i='${i}' class='step-type p-2 border rounded bg-gray-100'><option value='work' ${s.type==='work'?'selected':''}>WORK</option><option value='rest' ${s.type==='rest'?'selected':''}>REST</option></select><input type='number' value='${s.duration}' data-i='${i}' class='step-sec p-2 border rounded w-full' placeholder='秒'><button data-i='${i}' class='rm px-3 py-2 bg-red-500 text-white rounded'>×</button></div>`).join('');
+      // wire
+      customBox.querySelectorAll('.step-type').forEach(el=> el.onchange=(e)=>{ ct.steps[+e.target.dataset.i].type = e.target.value; });
+      customBox.querySelectorAll('.step-sec').forEach(el=> el.oninput=(e)=>{ ct.steps[+e.target.dataset.i].duration = parseInt(e.target.value)||0; });
+      customBox.querySelectorAll('.rm').forEach(el=> el.onclick=(e)=>{ const i=+e.target.dataset.i; if(ct.steps.length>1){ ct.steps.splice(i,1); renderCustomSettings(); } });
+      document.getElementById('custom-add-step-btn').onclick=()=>{ ct.steps.push({type:'work',duration:30}); renderCustomSettings(); };
+      document.getElementById('custom-start-btn').onclick=()=>{ ct.reps=parseInt(document.getElementById('custom-reps').value)||1; ct.curRep=1; ct.idx=0; ct.status='running'; ct.start=Date.now(); customSettings.classList.add('hidden'); customRunner.classList.remove('hidden'); updateCustomUI(); beep(880,120); };
+      document.getElementById('custom-reset-btn').onclick=()=> initCustom();
+    }
+
+    function updateCustomUI(){
+      document.getElementById('custom-runner-set-info').textContent = `SET ${ct.curRep} / ${ct.reps}`;
+      document.getElementById('custom-runner-step-info').textContent = `${ct.steps[ct.idx].type.toUpperCase()} ${ct.idx+1} / ${ct.steps.length}`;
+      const cur=ct.steps[ct.idx]; const el=Date.now()-ct.start; const rem=Math.max(0, cur.duration*1000 - el); const sec=Math.ceil(rem/1000); customTime.textContent = String(sec).padStart(2,'0');
+      customRunner.classList.toggle('work-bg', cur.type==='work');
+      customRunner.classList.toggle('rest-bg', cur.type==='rest');
+    }
+    function tickCustom(){
+      if(ct.status!=='running') return; const cur=ct.steps[ct.idx]; const now=Date.now(); const el= now - ct.start; const rem=cur.duration*1000 - el; if(rem<=0){ ct.idx++; if(ct.idx>=ct.steps.length){ ct.curRep++; if(ct.curRep>ct.reps){ ct.status='idle'; initCustom(); return; } ct.idx=0; } ct.start=now; beep(880,120); } updateCustomUI();
+    }
+
+    /* ====== RAF Loop ====== */
+    function loop(){
+      if(current==='split') tickSplit();
+      else if(current==='pm') tickPM();
+      else if(current==='custom') tickCustom();
+      requestAnimationFrame(loop);
+    }
+
+    // 初期表示
+    show('chooser');
+    initSplit();
+    initPM();
+    initCustom();
+    loop();
+  });
+  </script>
+</body>
+</html>
