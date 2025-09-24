@@ -1,0 +1,96 @@
+:root{
+--master-h:64px; /* 下マスターの高さ */
+--master-btn-py:12px; /* 下マスターのボタン上下padding */
+--master-btn-fs:16px; /* 下マスターのボタン文字 */
+--pm-btn-h:76px; /* ペースメーカーのボタンを大きく */
+}
+
+
+html,body{height:100dvh;margin:0;padding:0;overflow:hidden;background:#e5e7eb;touch-action:manipulation;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
+.timer-font{font-variant-numeric:tabular-nums}
+
+
+/* 画面: 選択/各モード */
+.screen{position:relative; height:100%; width:100%;}
+.hidden{display:none}
+
+
+/* 戻るボタン */
+.back-btn{position:fixed; left:env(safe-area-inset-left,8px); top:calc(env(safe-area-inset-top,8px) + 8px); z-index:60;}
+.back-btn button{width:44px;height:44px;border-radius:9999px}
+
+
+/* === Split Mode === */
+.split-wrap{display:flex;flex-direction:column;height:100%;}
+.split-grid{display:grid;flex:1 1 auto;padding:6px;gap:6px;overflow:hidden;}
+.split-card{background:#F9FAFB;border-radius:12px;padding:8px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto 1fr auto;gap:6px;height:100%;transition:background-color .2s}
+
+
+.split-card-header{grid-column:1/-1;display:grid;grid-template-columns:1fr minmax(86px,42%);gap:6px;align-items:center}
+.split-name-input{min-width:0;text-align:left}
+.target-lap-input{min-width:0;text-align:center;padding:4px 6px}
+
+
+.split-main-time{grid-column:1/-1;font-size:var(--font-main);font-weight:800}
+.split-lap-live{grid-column:1/-1;font-size:var(--font-live);font-weight:800;border-radius:8px;padding:4px 6px}
+/* 枠全体に色付けするためのクラス（10秒前までは無色）*/
+.frame-warn10{background:#fef3c7!important} /* amber-100 */
+.frame-warn5 {background:#ffedd5!important} /* orange-100 */
+.frame-bad {background:#fee2e2!important} /* red-100 */
+
+
+.split-lap-history{grid-column:1/-1;overflow-y:auto;min-height:1.6em;background:rgba(229,231,235,.8);border-radius:8px;padding:4px 6px;line-height:1.2;font-size:clamp(11px,2.8vw,13px)}
+.split-lap-history .hist-line{margin-bottom:2px}
+.split-lap-history .hist-n{margin-right:4px;font-weight:700}
+.split-lap-history .hist-cum{margin-left:4px;color:#6b7280}
+
+
+.split-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1.6fr;gap:6px}
+.btn-lap,.btn-start{height:var(--btn-h)}
+
+
+.split-master{height:var(--master-h);background:#1f2937;color:white;display:flex;gap:8px;align-items:center;justify-content:space-around;padding:8px}
+.split-master .btn{padding-top:var(--master-btn-py);padding-bottom:var(--master-btn-py);font-size:var(--master-btn-fs)}
+
+
+/* === Pacemaker === */
+.pm-grid{display:grid;grid-auto-rows:minmax(180px,1fr);gap:6px;height:100%;padding:6px;overflow:hidden}
+.pm-lane{display:grid;grid-template-columns:2fr 3fr;grid-template-rows:1fr 1fr 1fr;background:#fff;border-radius:12px;padding:8px;transition:background-color .2s}
+.pm-lane-main{grid-row:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid #e5e7eb}
+.pm-lane-history{font-size:12px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px}
+.pm-lane-rest{background:var(--rest-color)!important;color:#fff}
+.pm-lap-btn{width:100%;height:var(--pm-btn-h);font-size:clamp(18px,5vw,24px);padding:12px 16px;border-radius:14px}
+
+
+/* ペースメーカー色付け（初期ロジック復元） */
+.approaching-warn{ background-color: var(--approaching-warn-color)!important; }
+.approaching-imminent{ background-color: var(--approaching-imminent-color)!important; }
+.exceeded{ background-color: var(--exceeded-color)!important; color:#fff!important; }
+.exceeded div,.exceeded span,.exceeded p,.exceeded input,.exceeded label{ color:#fff!important; }
+
+
+/* === Custom Timer === */
+.custom-runner{transition:background-color .3s}
+.work-bg{background:var(--work-color)}
+.rest-bg{background:var(--rest-color);color:#fff}
+
+
+/* Summary modal */
+.summary-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:70;padding:16px}
+.summary-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
+.summary-table{width:100%;border-collapse:collapse;margin-top:12px}
+.summary-table th,.summary-table td{border:1px solid #d1d5db;padding:6px;text-align:center}
+.summary-table th{background:#f3f4f6}
+
+
+/* Help modal */
+.help-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:80;padding:16px}
+.help-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
+.help-content h3{font-weight:700;margin-top:12px}
+.help-content ul{list-style:disc;padding-left:1.25rem}
+
+
+@media (max-width:430px){
+.split-card{gap:4px;padding:6px}
+.split-card-header{grid-template-columns:1fr minmax(80px,48%)}
+}
