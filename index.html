@@ -143,7 +143,8 @@
     <div id="pm-settings" class="p-4 space-y-3">
       <h2 class="text-xl font-bold text-center">ペースメーカー設定</h2>
       <div class="grid grid-cols-2 gap-3">
-        <input id="pm-distance" type="number" placeholder="距離(m)" class="p-2 border rounded-md text-lg col-span-2">
+        <input id="pm-distance" type="number" placeholder="距離(m)" class="p-2 border rounded-md text-lg">
+        <input id="pm-lap-distance" type="number" placeholder="ラップ距離(m)" value="400" class="p-2 border rounded-md text-lg">
         <input id="pm-reps" type="number" placeholder="本数" class="p-2 border rounded-md text-lg">
         <div>
           <button id="pm-lane-minus" class="px-3 py-2 border rounded-l-md">-</button>
@@ -539,18 +540,19 @@
       distInput.placeholder = e.target.checked ? '自動計算' : 'レスト距離(m)';
       if(e.target.checked) distInput.value='';
     });
-
     function startPacemakerSession(){
       const distance = parseInt(document.getElementById('pm-distance').value)||0;
+      const lapDistance = parseInt(document.getElementById('pm-lap-distance').value)||400; // ★追加：ラップ距離を取得
       const reps     = parseInt(document.getElementById('pm-reps').value)||1;
       const returnToStart = document.getElementById('pm-return-to-start').checked;
       const restDistInput = document.getElementById('pm-rest-dist');
       let restDist = 0;
       if(reps>1){
-        restDist = returnToStart ? 400 - (distance % 400) : (parseInt(restDistInput.value)||0);
-        if(restDist===400 && distance%400===0) restDist = 0;
+        // ▼変更：「400」を「lapDistance」に置換
+        restDist = returnToStart ? lapDistance - (distance % lapDistance) : (parseInt(restDistInput.value)||0);
+        if(restDist===lapDistance && distance%lapDistance===0) restDist = 0;
       }
-      const settings = { distance, reps, restDist, returnToStart, lanes:[] };
+      const settings = { distance, reps, restDist, returnToStart, lapDistance, lanes:[] }; // ★追加：settingsにlapDistanceを保存
       for(let i=0;i<pmState.settings.lanes;i++){
         const name = document.querySelector(`.pm-lane-name[data-lane="${i}"]`).value || `レーン ${i+1}`;
         const min  = parseInt(document.querySelector(`.pm-target-min[data-lane="${i}"]`).value)||0;
@@ -558,12 +560,13 @@
         settings.lanes.push({ name, targetSec: min*60 + sec });
       }
       if(settings.distance<=0){ alert('有効な設定を入力してください'); return; }
-
+    
       pmState = {
         status:'ready', settings, results:[],
         lanes: settings.lanes.map((laneSetting,i)=>({
           id:i, name:laneSetting.name, status:'ready', startTime:0, repStartTime:0, elapsed:0,
           lapCount:0, lastLapTime:0, fullLapHistory:[], totalTime:0, currentRep:1,
+          // ▼変更：calculateTargetSplitsにlapDistanceを渡す
           targetSplits: calculateTargetSplits(settings, laneSetting.targetSec, 1),
           targetSec: laneSetting.targetSec,
         }))
@@ -572,24 +575,26 @@
       pmRunner.classList.remove('hidden');
       renderPacemaker();
     }
-    document.getElementById('pm-start-btn').onclick = startPacemakerSession;
-
     function calculateTargetSplits(settings, targetSec, rep){
-      const { distance, restDist, returnToStart } = settings;
+      // ▼変更：settingsからlapDistanceを取得
+      const { distance, restDist, returnToStart, lapDistance } = settings;
       if(distance<=0) return [];
       const workPace = targetSec>0 ? (targetSec*1000)/distance : Infinity;
-
+    
       let startOffset = 0;
       if(returnToStart){
-        startOffset = distance % 400;   // 毎rep常にスタート/ゴール同一点
+        // ▼変更：「400」を「lapDistance」に置換
+        startOffset = distance % lapDistance;
       } else {
-        startOffset = ( (distance*(rep-1)) + (restDist*(rep-1)) ) % 400; // 前repからのズレ
+        // ▼変更：「400」を「lapDistance」に置換
+        startOffset = ( (distance*(rep-1)) + (restDist*(rep-1)) ) % lapDistance;
       }
-
+    
       let currentRunDist=0; const splits=[];
       while(currentRunDist < distance){
-        let lapDist = 400 - ((startOffset + currentRunDist) % 400);
-        if(lapDist===0) lapDist=400;
+        // ▼変更：「400」を「lapDistance」に置換
+        let lapDist = lapDistance - ((startOffset + currentRunDist) % lapDistance);
+        if(lapDist===0) lapDist=lapDistance;
         if(currentRunDist + lapDist > distance) lapDist = distance - currentRunDist;
         currentRunDist += lapDist;
         const targetTime = workPace * currentRunDist;
@@ -597,7 +602,7 @@
       }
       return splits;
     }
-
+   
     function renderPacemaker(){
       if(pmState.status==='idle' || pmState.status==='finished' || !pmState.lanes) return;
       pmGrid.innerHTML = pmState.lanes.map(lane=>{
@@ -668,6 +673,7 @@
       if(lane.status==='ready' || lane.status==='resting'){
         if(lane.status==='resting'){
           lane.currentRep++;
+          // ▼変更：引数がsettingsオブジェクトになったため、そのまま渡す
           lane.targetSplits = calculateTargetSplits(pmState.settings, lane.targetSec, lane.currentRep);
         }
         pmState.status='running';
