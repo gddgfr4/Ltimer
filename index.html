@@ -20,7 +20,7 @@
       --master-h:64px;   /* 下マスターの高さ */
       --master-btn-py:12px; /* 下マスターのボタン上下padding */
       --master-btn-fs:16px;  /* 下マスターのボタン文字 */
-      --pm-btn-h:76px; /* ペースメーカーのボタンを大きく */
+      --pm-btn-h:76px; /* インターバルのボタンを大きく */
     }
 
     html,body{height:100dvh;margin:0;padding:0;overflow:hidden;background:#e5e7eb;touch-action:manipulation;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
@@ -69,7 +69,7 @@
     .pm-lane-rest{background:var(--rest-color)!important;color:#fff}
     .pm-lap-btn{width:100%;height:var(--pm-btn-h);font-size:clamp(18px,5vw,24px);padding:12px 16px;border-radius:14px}
 
-    /* ペースメーカー色付け（初期ロジック復元） */
+    /* インターバル色付け（初期ロジック復元） */
     .approaching-warn{ background-color: var(--approaching-warn-color)!important; }
     .approaching-imminent{ background-color: var(--approaching-imminent-color)!important; }
     .exceeded{ background-color: var(--exceeded-color)!important; color:#fff!important; }
@@ -105,11 +105,11 @@
     <h1 class="text-2xl font-bold mb-2">モードを選択</h1>
     <div class="grid grid-cols-1 gap-3 w-full max-w-sm">
       <div class="grid grid-cols-3 gap-2">
-        <button id="choose-split" class="col-span-2 py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">スプリット</button>
+        <button id="choose-split" class="col-span-2 py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">ペース走</button>
         <button id="help-split" class="py-2 text-sm font-bold text-indigo-700 bg-indigo-50 rounded-xl border border-indigo-200">説明</button>
       </div>
       <div class="grid grid-cols-3 gap-2">
-        <button id="choose-pm" class="col-span-2 py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">ペースメーカー</button>
+        <button id="choose-pm" class="col-span-2 py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">インターバル</button>
         <button id="help-pm" class="py-2 text-sm font-bold text-green-700 bg-green-50 rounded-xl border border-green-200">説明</button>
       </div>
       <div class="grid grid-cols-3 gap-2">
@@ -141,7 +141,7 @@
   <!-- Pacemaker -->
   <section id="screen-pm" class="screen hidden">
     <div id="pm-settings" class="p-4 space-y-3">
-      <h2 class="text-xl font-bold text-center">ペースメーカー設定</h2>
+      <h2 class="text-xl font-bold text-center">インターバル設定</h2>
       <div class="grid grid-cols-2 gap-3">
         <input id="pm-distance" type="number" placeholder="距離(m)" class="p-2 border rounded-md text-lg">
         <input id="pm-lap-distance" type="number" placeholder="ラップ距離(m)" value="400" class="p-2 border rounded-md text-lg">
@@ -244,7 +244,7 @@
 
     const helpContent = {
       split: `
-        <p class="text-base">スプリットは複数の個別ストップウォッチです。</p>
+        <p class="text-base">ペース走は複数の個別ストップウォッチです。</p>
         <h3>設定の仕方</h3>
         <ul>
           <li>各カード上部の「目標(sec)」に1ラップ目標を秒で入力。</li>
@@ -265,7 +265,7 @@
         </ul>
       `,
       pm: `
-        <p class="text-base">ペースメーカーは距離×本数の練習で、レーンごとに目標を管理します。</p>
+        <p class="text-base">インターバルは距離×本数の練習で、レーンごとに目標を管理します。</p>
         <h3>設定の仕方</h3>
         <ul>
           <li>距離(m)、本数、レーン数（±）を設定。</li>
@@ -297,7 +297,7 @@
     };
 
     function openHelp(mode){
-      help.title.textContent = ({split:'スプリットの説明', pm:'ペースメーカーの説明', custom:'タイマーの説明'})[mode]||'説明';
+      help.title.textContent = ({split:'ペース走の説明', pm:'インターバルの説明', custom:'タイマーの説明'})[mode]||'説明';
       help.body.innerHTML = helpContent[mode]||'';
       help.el.classList.remove('hidden');
     }
@@ -331,7 +331,7 @@
     summary.close.onclick = closeSummary;
 
     function buildSplitSummary(data){
-      summary.title.textContent = 'スプリット結果';
+      summary.title.textContent = 'ペース走結果';
       const rows = data.map(sw=>{
         const laps = sw.laps.map((l,i)=> `${i+1}: ${fmt(l)}`).join('<br>');
         return `<tr><td>${sw.name}</td><td>${fmt(sw.elapsed)}</td><td class="text-left">${laps}</td></tr>`;
@@ -341,7 +341,7 @@
 
     function buildPmSummary(pm){
       const {settings, lanes} = pm;
-      summary.title.textContent = `ペースメーカー結果 (${settings.distance}m × ${settings.reps})`;
+      summary.title.textContent = `インターバル結果 (${settings.distance}m × ${settings.reps})`;
       let html = '';
       for(let rep=1; rep<=settings.reps; rep++){
         const headerSplits = (lanes[0]?.fullLapHistory||[]).filter(h=>h.rep===rep).map(h=>h.dist);
