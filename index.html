@@ -541,62 +541,92 @@
       if(e.target.checked) distInput.value='';
     });
     document.getElementById('pm-start-btn').onclick = startPacemakerSession;
-    function startPacemakerSession(){
-      const distance = parseInt(document.getElementById('pm-distance').value)||0;
-      const lapDistance = parseInt(document.getElementById('pm-lap-distance').value)||400; // ★追加：ラップ距離を取得
-      const reps     = parseInt(document.getElementById('pm-reps').value)||1;
+    function startPacemakerSession() {
+      // 1. ユーザー入力値を取得
+      const distance = parseInt(document.getElementById('pm-distance').value) || 0;
+      const lapDistance = parseInt(document.getElementById('pm-lap-distance').value) || 400;
+      const reps = parseInt(document.getElementById('pm-reps').value) || 1;
       const returnToStart = document.getElementById('pm-return-to-start').checked;
-      const restDistInput = document.getElementById('pm-rest-dist');
-      let restDist = 0;
-      if(reps>1){
-        // ▼変更：「400」を「lapDistance」に置換
-        restDist = returnToStart ? lapDistance - (distance % lapDistance) : (parseInt(restDistInput.value)||0);
-        if(restDist===lapDistance && distance%lapDistance===0) restDist = 0;
+      const restDist = parseInt(document.getElementById('pm-rest-dist').value) || 0;
+
+      if (distance <= 0 || lapDistance <= 0) {
+        alert('有効な距離を入力してください');
+        return;
       }
-      const settings = { distance, reps, restDist, returnToStart, lapDistance, lanes:[] }; // ★追加：settingsにlapDistanceを保存
-      for(let i=0;i<pmState.settings.lanes;i++){
-        const name = document.querySelector(`.pm-lane-name[data-lane="${i}"]`).value || `レーン ${i+1}`;
-        const min  = parseInt(document.querySelector(`.pm-target-min[data-lane="${i}"]`).value)||0;
-        const sec  = parseInt(document.querySelector(`.pm-target-sec[data-lane="${i}"]`).value)||0;
-        settings.lanes.push({ name, targetSec: min*60 + sec });
+      
+      const mod = (n, m) => ((n % m) + m) % m;
+
+      // 2. 各本のスタート位置を計算
+      const repStartOffsets = new Array(reps);
+      if (returnToStart) {
+        // 「開始点へ」ONの場合：最終ゴールから逆算する
+        let lastRepStartPos = mod(lapDistance - distance, lapDistance);
+        let currentPos = lastRepStartPos;
+        for (let i = reps - 2; i >= 0; i--) {
+          const prevGoalPos = mod(currentPos - restDist, lapDistance);
+          currentPos = mod(prevGoalPos - distance, lapDistance);
+        }
+        repStartOffsets[0] = currentPos; // 1本目のスタート位置が確定
+        
+        // 2本目以降のスタート位置を順方向に計算
+        for (let i = 1; i < reps; i++) {
+            const prevGoalPos = mod(repStartOffsets[i-1] + distance, lapDistance);
+            repStartOffsets[i] = mod(prevGoalPos + restDist, lapDistance);
+        }
+
+      } else {
+        // OFFの場合：0m地点から順方向に計算
+        repStartOffsets[0] = 0;
+        for (let i = 1; i < reps; i++) {
+          const prevGoalPos = mod(repStartOffsets[i-1] + distance, lapDistance);
+          repStartOffsets[i] = mod(prevGoalPos + restDist, lapDistance);
+        }
       }
-      if(settings.distance<=0){ alert('有効な設定を入力してください'); return; }
-    
+
+      // 3. stateを構築
+      const settings = { distance, reps, restDist, returnToStart, lapDistance, repStartOffsets, lanes: [] };
+      for (let i = 0; i < pmState.settings.lanes; i++) {
+        const name = document.querySelector(`.pm-lane-name[data-lane="${i}"]`).value || `レーン ${i + 1}`;
+        const min = parseInt(document.querySelector(`.pm-target-min[data-lane="${i}"]`).value) || 0;
+        const sec = parseInt(document.querySelector(`.pm-target-sec[data-lane="${i}"]`).value) || 0;
+        settings.lanes.push({ name, targetSec: min * 60 + sec });
+      }
+      
       pmState = {
-        status:'ready', settings, results:[],
-        lanes: settings.lanes.map((laneSetting,i)=>({
-          id:i, name:laneSetting.name, status:'ready', startTime:0, repStartTime:0, elapsed:0,
-          lapCount:0, lastLapTime:0, fullLapHistory:[], totalTime:0, currentRep:1,
-          // ▼変更：calculateTargetSplitsにlapDistanceを渡す
-          targetSplits: calculateTargetSplits(settings, laneSetting.targetSec, 1),
+        status: 'ready', settings,
+        lanes: settings.lanes.map((laneSetting, i) => ({
+          id: i, name: laneSetting.name, status: 'ready', startTime: 0, repStartTime: 0, elapsed: 0,
+          lapCount: 0, lastLapTime: 0, fullLapHistory: [], totalTime: 0, currentRep: 1,
+          targetSplits: calculateTargetSplits(settings, laneSetting.targetSec, settings.repStartOffsets[0]),
           targetSec: laneSetting.targetSec,
         }))
       };
+
       pmSettings.classList.add('hidden');
       pmRunner.classList.remove('hidden');
       renderPacemaker();
     }
-    function calculateTargetSplits(settings, targetSec, rep){
-      // ▼変更：settingsからlapDistanceを取得
-      const { distance, restDist, returnToStart, lapDistance } = settings;
-      if(distance<=0) return [];
-      const workPace = targetSec>0 ? (targetSec*1000)/distance : Infinity;
-    
-      let startOffset = 0;
-      if(returnToStart){
-        // ▼変更：「400」を「lapDistance」に置換
-        startOffset = distance % lapDistance;
-      } else {
-        // ▼変更：「400」を「lapDistance」に置換
-        startOffset = ( (distance*(rep-1)) + (restDist*(rep-1)) ) % lapDistance;
-      }
-    
-      let currentRunDist=0; const splits=[];
-      while(currentRunDist < distance){
-        // ▼変更：「400」を「lapDistance」に置換
-        let lapDist = lapDistance - ((startOffset + currentRunDist) % lapDistance);
-        if(lapDist===0) lapDist=lapDistance;
-        if(currentRunDist + lapDist > distance) lapDist = distance - currentRunDist;
+    function calculateTargetSplits(settings, targetSec, startOffset) {
+      const { distance, lapDistance } = settings;
+      if (distance <= 0) return [];
+      
+      const workPace = targetSec > 0 ? (targetSec * 1000) / distance : Infinity;
+      const mod = (n, m) => ((n % m) + m) % m;
+
+      let currentRunDist = 0;
+      const splits = [];
+
+      while (currentRunDist < distance) {
+        // 現在位置から次の周回ラインまでの距離を計算
+        let distToNextLapLine = lapDistance - mod(startOffset + currentRunDist, lapDistance);
+        if (distToNextLapLine === 0) distToNextLapLine = lapDistance;
+
+        let lapDist = distToNextLapLine;
+        // 本数のゴールが周回ラインより手前なら、ゴールまでの距離をラップ距離とする
+        if (currentRunDist + lapDist > distance) {
+          lapDist = distance - currentRunDist;
+        }
+        
         currentRunDist += lapDist;
         const targetTime = workPace * currentRunDist;
         splits.push({ dist: currentRunDist, targetTime });
@@ -672,10 +702,11 @@
       const now = Date.now();
 
       if(lane.status==='ready' || lane.status==='resting'){
-        if(lane.status==='resting'){
+        if(lane.status === 'resting'){
           lane.currentRep++;
-          // ▼変更：引数がsettingsオブジェクトになったため、そのまま渡す
-          lane.targetSplits = calculateTargetSplits(pmState.settings, lane.targetSec, lane.currentRep);
+          // ▼変更: 次のレップのスタート位置を使ってスプリットを再計算
+          const nextRepOffset = pmState.settings.repStartOffsets[lane.currentRep - 1];
+          lane.targetSplits = calculateTargetSplits(pmState.settings, lane.targetSec, nextRepOffset);
         }
         pmState.status='running';
         lane.status='running';
