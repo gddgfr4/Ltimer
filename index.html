@@ -48,7 +48,7 @@
     .frame-bad   {background:#fca5a5!important} /* red-300 */
     .pm-good { background-color: #dcfce7 !important; } /* green-100 */
 
-    .split-master{height:var(--master-h);background:#1f2937;color:white;display:flex;gap:8px;align-items:center;justify-content:space-around;padding:8px}
+    .split-master{min-height:var(--master-h);background:#1f2937;color:white;display:flex;align-items:center;justify-content:center;padding:8px}
     
     /* === Pacemaker === */
     .pm-runner-wrap {display:flex; flex-direction:column; height:100%}
@@ -124,12 +124,12 @@
             <button id="share-ready-btn-2" class="w-full py-1 border-2 border-gray-400 rounded">ユーザー2: 準備中</button>
           </div>
         </div>
-        <div id="standalone-controls" class="flex gap-8 items-center justify-center">
-            <button data-action="add" class="w-12 h-12 rounded-full bg-blue-500 text-white text-2xl">+</button>
-            <button data-action="remove" class="w-12 h-12 rounded-full bg-gray-500 text-white text-2xl">−</button>
-            <button data-action="start-all" class="btn px-4 bg-green-500 rounded font-bold">START ALL</button>
-            <button data-action="stop-all"  class="btn px-4 bg-red-500 rounded font-bold">STOP ALL</button>
-            <button data-action="review-reset" class="btn px-4 bg-orange-500 rounded font-bold">結果＆リセット</button>
+        <div id="standalone-controls" class="flex flex-wrap gap-x-2 sm:gap-x-4 gap-y-2 items-center justify-center">
+            <button data-action="add" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-blue-500 text-white text-xl sm:text-2xl">+</button>
+            <button data-action="remove" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-500 text-white text-xl sm:text-2xl">−</button>
+            <button data-action="start-all" class="btn px-3 text-sm sm:text-base sm:px-4 bg-green-500 rounded font-bold">START ALL</button>
+            <button data-action="stop-all"  class="btn px-3 text-sm sm:text-base sm:px-4 bg-red-500 rounded font-bold">STOP ALL</button>
+            <button data-action="review-reset" class="btn px-3 text-sm sm:text-base sm:px-4 bg-orange-500 rounded font-bold">結果＆リセット</button>
         </div>
       </div>
     </div>
@@ -428,7 +428,8 @@
         const myUserRef = sessionRef.child('users').child(userId);
         myUserRef.onDisconnect().update({ connected: false, ready: false });
         listenToSessionChanges();
-        showScreen('chooser');
+        showScreen('split');
+        initSplit(true);
       });
     }
  
@@ -470,14 +471,12 @@
         if (user1.connected && user2.connected) {
             statusEl.textContent = '2人接続済み';
             if (user1.ready && user2.ready) {
-                statusEl.textContent = '両者準備OK！リーダーが操作してください。';
+                statusEl.textContent = '両者準備OK！操作できます。';
             }
         } else {
             statusEl.textContent = '相手の接続を待っています...';
         }
     }
-
-    function syncWatchesToFirebase() { if (sessionRef) sessionRef.child('watches').set(watches); }
     
     readyBtn1.onclick = (e) => { handleButtonInteraction(e); if(userId === 'user1') toggleReady(); };
     readyBtn2.onclick = (e) => { handleButtonInteraction(e); if(userId === 'user2') toggleReady(); };
@@ -549,7 +548,6 @@
             if (currentData === null) {
                 return initialWatches;
             }
-            // If data exists, do nothing, let the listener handle it.
             return; 
         });
       } else {
@@ -626,11 +624,11 @@
               }
             } else if (action === 'lap' && sw.running) {
               sw.laps = sw.laps || [];
-              const lapTime = (now - sw.start) - sw.lastLap;
+              const currentElapsed = now - sw.start;
+              const lapTime = currentElapsed - sw.lastLap;
               sw.laps.push(lapTime);
-              sw.lastLap = now - sw.start;
+              sw.lastLap = currentElapsed;
               
-              // Freeze display locally for 3s
               setTimeout(() => {
                 const liveEl = document.querySelector(`#w-${id} .runner-lap-live`);
                 if (liveEl) {
@@ -680,22 +678,24 @@
  
     function tickSplit() {
       const now = Date.now();
-      watches.forEach(sw => {
-          if (sw.running) {
-            sw.elapsed = now - sw.start;
-          }
-      });
       
       watches.forEach(sw => {
           const card = document.getElementById('w-' + sw.id);
           if (!card) return;
+
+          const currentElapsed = sw.running ? (now - sw.start) : sw.elapsed;
+          const currentLapElapsed = sw.running ? (currentElapsed - sw.lastLap) : (sw.elapsed - sw.lastLap);
+
           const liveEl = card.querySelector('.runner-lap-live');
-          if (sw.running) {
-             card.querySelector('.runner-main-time').textContent = fmt(sw.elapsed);
-             if (!liveEl.dataset.frozen) liveEl.textContent = fmt(sw.elapsed - sw.lastLap);
+          
+          card.querySelector('.runner-main-time').textContent = fmt(currentElapsed);
+
+          if (!liveEl.dataset.frozen) {
+              liveEl.textContent = fmt(currentLapElapsed);
           }
+
           if (sw.target > 0 && sw.running) {
-              const diff = (sw.target * 1000) - (now - sw.start - sw.lastLap);
+              const diff = (sw.target * 1000) - currentLapElapsed;
               card.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
               if (diff < 0) card.classList.add('frame-bad');
               else if (diff <= 5000) card.classList.add('frame-warn5');
