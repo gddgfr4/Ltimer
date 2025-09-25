@@ -116,8 +116,8 @@
   <section id="screen-split" class="screen hidden">
     <div class="runner-wrap">
       <div id="split-grid" class="runner-grid"></div>
-      <div id="split-master" class="split-master">
-        <div id="share-controls" class="hidden w-full flex flex-col items-center text-xs px-2">
+      <div id="split-master" class="split-master flex-wrap gap-x-4 gap-y-2">
+        <div id="share-controls" class="hidden w-full flex-grow flex flex-col items-center text-xs px-2">
           <div id="share-status" class="mb-1">接続中...</div>
           <div class="w-full grid grid-cols-2 gap-2">
             <button id="share-ready-btn-1" class="w-full py-1 border-2 border-gray-400 rounded">ユーザー1: 準備中</button>
@@ -539,7 +539,7 @@
    
     function initSplit(isShared) {
       shareControls.classList.toggle('hidden', !isShared);
-      standaloneControls.classList.toggle('hidden', isShared);
+      standaloneControls.classList.toggle('hidden', isShared && !userId);
       
       const initialWatches = [{id:0,name:'タイマー 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
 
@@ -647,31 +647,39 @@
         b.onclick = (e) => {
           handleButtonInteraction(e);
           const {action} = e.currentTarget.dataset;
-          if (action === 'add' && watches.length < 6) { 
-              const newId = watches.length > 0 ? Math.max(...watches.map(w => w.id)) + 1 : 0;
-              watches.push({id:newId, name:`タイマー ${newId+1}`, running:false, start:0, elapsed:0, lastLap:0, laps:[], target:0});
-              renderSplit();
-          } else if (action === 'remove' && watches.length > 1) {
-              watches.pop();
-              renderSplit();
-          } else if (action === 'start-all') { 
-              watches.forEach(w => { if(!w.running){ w.running = true; w.start = Date.now() - w.elapsed; }}); 
-              renderSplit();
-          } else if (action === 'stop-all') { 
-              watches.forEach(w => {
-                if (w.running) {
-                    w.running = false;
-                    w.elapsed = Date.now() - w.start;
+          updateSharedWatches(currentWatches => {
+            if (action === 'add') {
+                const limit = sessionRef ? 4 : 6;
+                if (currentWatches.length < limit) {
+                    const newId = currentWatches.length > 0 ? Math.max(...currentWatches.map(w => w.id)) + 1 : 0;
+                    currentWatches.push({id:newId, name:`タイマー ${newId+1}`, running:false, start:0, elapsed:0, lastLap:0, laps:[], target:0});
                 }
-              }); 
-              renderSplit();
-          } else if (action === 'review-reset' && !watches.some(w=>w.running)) { 
-            if (watches.some(w => w.laps && w.laps.length > 0)) {
-                showSummary(watches, () => initSplit(false));
-            } else {
-                initSplit(false);
+            } else if (action === 'remove') {
+                if (currentWatches.length > 1) {
+                    currentWatches.pop();
+                }
+            } else if (action === 'start-all') {
+                const now = Date.now();
+                currentWatches.forEach(w => { if(!w.running){ w.running = true; w.start = now - w.elapsed; }});
+            } else if (action === 'stop-all') {
+                const now = Date.now();
+                currentWatches.forEach(w => {
+                    if (w.running) {
+                        w.running = false;
+                        w.elapsed = now - w.start;
+                    }
+                });
+            } else if (action === 'review-reset' && !currentWatches.some(w=>w.running)) {
+                if (currentWatches.some(w => w.laps && w.laps.length > 0)) {
+                    showSummary(currentWatches, () => {
+                        updateSharedWatches(() => [{id:0,name:'タイマー 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}]);
+                    });
+                } else {
+                   return [{id:0,name:'タイマー 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+                }
             }
-          }
+            return currentWatches;
+          });
         }
       });
     }
