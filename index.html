@@ -69,6 +69,11 @@
     .summary-table{width:100%;border-collapse:collapse;margin-top:12px}
     .summary-table th,.summary-table td{border:1px solid #d1d5db;padding:6px;text-align:center}
     .summary-table th{background:#f3f4f6}
+    /* Help modal */
+    .help-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:80;padding:16px}
+    .help-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
+    .help-content h3{font-weight:700;margin-top:12px}
+    .help-content ul{list-style:disc;padding-left:1.25rem}
   </style>
 </head>
 <body>
@@ -186,6 +191,16 @@
       </div>
     </div>
   </div>
+  <!-- Help Modal -->
+  <div id="help" class="help-modal hidden">
+    <div class="help-content">
+      <div class="flex items-center justify-between">
+        <h2 id="help-title" class="text-2xl font-bold">使い方</h2>
+        <button id="help-close" class="px-3 py-1 bg-gray-200 rounded">閉じる</button>
+      </div>
+      <div id="help-body" class="mt-3 text-sm leading-relaxed"></div>
+    </div>
+  </div>
   
   <script>
   document.addEventListener('DOMContentLoaded', () => {
@@ -284,7 +299,68 @@
  
     const shareControls = document.getElementById('share-controls');
     const standaloneControls = document.getElementById('standalone-controls');
- 
+    const readyBtn1 = document.getElementById('share-ready-btn-1');
+    const readyBtn2 = document.getElementById('share-ready-btn-2');
+
+    /* ==================================
+     * ヘルプモーダル
+     * ================================== */
+    const helpModal = document.getElementById('help');
+    const helpTitle = document.getElementById('help-title');
+    const helpBody = document.getElementById('help-body');
+    const helpContent = {
+        split: {
+            title: 'ペース走モードの使い方',
+            body: `
+                <p>最大6人まで同時にタイムを計測できるストップウォッチです。</p>
+                <ul class="list-disc pl-5 mt-2 space-y-1">
+                    <li><strong>+/-ボタン:</strong> タイマーの数を増減します。</li>
+                    <li><strong>START ALL/STOP ALL:</strong> 全てのタイマーを同時に操作します。</li>
+                    <li><strong>結果＆リセット:</strong> タイムを記録している場合、結果を表示してから全てのタイマーをリセットします。</li>
+                    <li><strong>目標(sec):</strong> 各タイマーに目標ラップタイム（秒）を設定すると、ペースに応じて背景色が変化します。</li>
+                </ul>
+            `
+        },
+        pm: {
+            title: 'インターバルモードの使い方',
+            body: `
+                <p>複雑なインターバル練習のラップを自動で計算・計測するモードです。</p>
+                <h3 class="font-bold mt-2">設定項目</h3>
+                <ul class="list-disc pl-5 mt-1 space-y-1">
+                    <li><strong>距離/本:</strong> 1本あたりの走行距離。</li>
+                    <li><strong>トラック1周長:</strong> 計測者がいる周回コースの1周の距離。</li>
+                    <li><strong>本数:</strong> 練習の本数。</li>
+                    <li><strong>レスト距離:</strong> 各本の間のつなぎの距離。</li>
+                    <li><strong>レーン目標:</strong> 1本あたりの目標タイムを設定すると、ペースに応じて背景色が変化します。</li>
+                </ul>
+                <h3 class="font-bold mt-2">計測方法</h3>
+                <p>物理法則に基づき、スタート地点や測定者の前を通過するタイミングを自動計算します。画面のボタンに表示される指示（START/PASS/FINISH）に従ってボタンを押してください。</p>
+            `
+        },
+        custom: {
+            title: 'タイマーモードの使い方',
+            body: `
+                <p>「運動」と「休憩」を組み合わせたオリジナルのタイマーを作成できます。</p>
+                 <ul class="list-disc pl-5 mt-2 space-y-1">
+                    <li><strong>ステップを追加:</strong> WORK(運動)またはREST(休憩)のステップを追加します。</li>
+                    <li><strong>セット数:</strong> 作成したステップの組み合わせを繰り返す回数を設定します。</li>
+                    <li><strong>START:</strong> 作成したタイマーを開始します。タイマー作動中は背景色が変化します。</li>
+                </ul>
+            `
+        }
+    };
+    function showHelp(mode) {
+        if (!helpContent[mode]) return;
+        helpTitle.textContent = helpContent[mode].title;
+        helpBody.innerHTML = helpContent[mode].body;
+        helpModal.classList.remove('hidden');
+    }
+    document.getElementById('help-split').onclick = (e) => { handleButtonInteraction(e); showHelp('split'); };
+    document.getElementById('help-pm').onclick = (e) => { handleButtonInteraction(e); showHelp('pm'); };
+    document.getElementById('help-custom').onclick = (e) => { handleButtonInteraction(e); showHelp('custom'); };
+    document.getElementById('help-close').onclick = (e) => { handleButtonInteraction(e); helpModal.classList.add('hidden'); };
+
+
     /* ==================================
      * 画面遷移ロジック
      * ================================== */
@@ -360,7 +436,7 @@
       sessionRef.on('value', (snapshot) => {
         if (!snapshot.exists()) return;
         const sessionData = snapshot.val();
-        // updateUsersStatusUI(sessionData.users);
+        updateUsersStatusUI(sessionData.users);
         const newWatches = sessionData.watches || [];
         if (JSON.stringify(watches) !== JSON.stringify(newWatches)) {
           watches = newWatches;
@@ -368,9 +444,51 @@
         }
       });
     }
- 
+    
+    function updateUsersStatusUI(users) {
+        if (!users || shareControls.classList.contains('hidden')) return;
+
+        const user1 = users.user1 || {};
+        const user2 = users.user2 || {};
+
+        const updateBtn = (btn, user, userIdText) => {
+            btn.textContent = `${userIdText}: ${user.connected ? (user.ready ? '準備OK' : '準備中') : '未接続'}`;
+            btn.classList.remove('border-gray-400', 'border-green-500', 'border-red-500');
+            if (!user.connected) {
+                btn.classList.add('border-red-500');
+            } else if (user.ready) {
+                btn.classList.add('border-green-500');
+            } else {
+                btn.classList.add('border-gray-400');
+            }
+        };
+
+        updateBtn(readyBtn1, user1, 'ユーザー1');
+        updateBtn(readyBtn2, user2, 'ユーザー2');
+        
+        const statusEl = document.getElementById('share-status');
+        if (user1.connected && user2.connected) {
+            statusEl.textContent = '2人接続済み';
+            if (user1.ready && user2.ready) {
+                statusEl.textContent = '両者準備OK！リーダーが操作してください。';
+            }
+        } else {
+            statusEl.textContent = '相手の接続を待っています...';
+        }
+    }
+
     function syncWatchesToFirebase() { if (sessionRef) sessionRef.child('watches').set(watches); }
- 
+    
+    readyBtn1.onclick = (e) => { handleButtonInteraction(e); if(userId === 'user1') toggleReady(); };
+    readyBtn2.onclick = (e) => { handleButtonInteraction(e); if(userId === 'user2') toggleReady(); };
+    function toggleReady() {
+        if (!sessionRef || !userId) return;
+        const myReadyRef = sessionRef.child('users').child(userId).child('ready');
+        myReadyRef.transaction((currentReadyState) => {
+            return !currentReadyState;
+        });
+    }
+
     /* ==================================
      * アプリ基本機能
      * ================================== */
@@ -394,7 +512,11 @@
     backWrap.querySelector('button').onclick = (e) => {
         handleButtonInteraction(e);
         stopCustomTimer();
-        if (pmState && pmState.running) pmState.running = false;
+        if (pmState && pmState.lanes) {
+            pmState.lanes.forEach(l => {
+                l.running = false;
+            });
+        }
         if(sessionRef && userId) {
             sessionRef.child('users').child(userId).update({ connected: false, ready: false });
             sessionRef.off(); sessionRef = null; userId = null;
@@ -535,7 +657,7 @@
     let pmState = {};
     
     function initPacemaker() {
-        pmState = { running: false };
+        pmState = {};
         document.getElementById('pm-settings').classList.remove('hidden');
         document.getElementById('pm-runner').classList.add('hidden');
         renderPmSettings();
@@ -550,10 +672,10 @@
         document.getElementById('pm-lane-count').textContent = `${laneCount}レーン`;
         for (let i = 1; i <= laneCount; i++) {
             container.innerHTML += `
-                <div class="grid grid-cols-3 gap-2 items-center">
-                    <label class="font-bold text-sm whitespace-nowrap">レーン${i} (${distance}m目標):</label>
-                    <input type="number" data-lane="${i}" class="pm-target-min col-span-1 p-2 border rounded-md" placeholder="分">
-                    <input type="number" data-lane="${i}" class="pm-target-sec col-span-1 p-2 border rounded-md" placeholder="秒">
+                <div class="grid grid-cols-4 gap-2 items-center">
+                    <input type="text" value="レーン ${i}" data-lane-id="${i}" class="pm-lane-name col-span-2 p-2 border rounded-md">
+                    <input type="number" data-lane-id="${i}" class="pm-target-min col-span-1 p-2 border rounded-md" placeholder="分">
+                    <input type="number" data-lane-id="${i}" class="pm-target-sec col-span-1 p-2 border rounded-md" placeholder="秒">
                 </div>`;
         }
     }
@@ -642,18 +764,19 @@
         };
         const lanes = [];
         for (let i = 1; i <= +document.getElementById('pm-lane-count').textContent[0]; i++) {
-            const min = +document.querySelector(`.pm-target-min[data-lane="${i}"]`).value || 0;
-            const sec = +document.querySelector(`.pm-target-sec[data-lane="${i}"]`).value || 0;
+            const min = +document.querySelector(`.pm-target-min[data-lane-id="${i}"]`).value || 0;
+            const sec = +document.querySelector(`.pm-target-sec[data-lane-id="${i}"]`).value || 0;
+            const name = document.querySelector(`.pm-lane-name[data-lane-id="${i}"]`).value.trim() || `レーン ${i}`;
             const targetTimePerRep = (min * 60 + sec) * 1000;
             lanes.push({
-                id: i, name: `レーン ${i}`, targetTime: targetTimePerRep,
+                id: i, name: name, targetTime: targetTimePerRep,
                 pace: targetTimePerRep > 0 ? targetTimePerRep / settings.W : 0,
-                laps: [], lastLapTime: 0, displayFrozen: false
+                laps: [], lastLapTime: 0, displayFrozen: false,
+                running: false, paused: false, repStartTime: 0, lapStartTime: 0, nextLapIndex: 0
             });
         }
         pmState = {
-            running: false, paused: false, startTime: 0, repStartTime: 0, lapStartTime: 0,
-            nextLapIndex: 0, settings, lanes, lapSchedule: generateLapSchedule(settings)
+            settings, lanes, lapSchedule: generateLapSchedule(settings)
         };
         renderPmRunner();
         wirePmRunner();
@@ -671,87 +794,94 @@
                 <div class="pm-lap-live timer-font">${fmt(0)}</div>
                 <div class="runner-lap-history" id="pm-history-${lane.id}">ラップ履歴</div>
                 <div class="flex flex-col justify-center items-center">
-                    <button class="pm-lap-btn bg-blue-500 text-white font-bold">START</button>
+                    <button data-lane-id="${lane.id}" class="pm-lap-btn bg-blue-500 text-white font-bold">START</button>
                     <p class="text-sm text-gray-500 mt-1" id="pm-target-info-${lane.id}">次の目標: ---</p>
                 </div>
             </div>`).join('');
+        recalibratePmLayout();
     }
 
     function wirePmRunner() {
-        const handleLapPress = (e) => {
-            handleButtonInteraction(e);
-            const now = Date.now();
-            const eventIndex = pmState.nextLapIndex;
-            if (eventIndex >= pmState.lapSchedule.length) return;
-            const event = pmState.lapSchedule[eventIndex];
-            
-            if (event.type.startsWith('START')) {
-                pmState.running = true;
-                pmState.paused = false;
-                pmState.repStartTime = pmState.lapStartTime = now;
-                if (event.rep === 1) pmState.startTime = now;
-            }
+        document.querySelectorAll('.pm-lap-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                handleButtonInteraction(e);
+                const now = Date.now();
+                const laneId = parseInt(e.currentTarget.dataset.laneId);
+                const lane = pmState.lanes.find(l => l.id === laneId);
+                if (!lane) return;
 
-            const totalRepTime = now - pmState.repStartTime;
-            
-            pmState.lanes.forEach(lane => {
+                const eventIndex = lane.nextLapIndex;
+                if (eventIndex >= pmState.lapSchedule.length) return;
+                const event = pmState.lapSchedule[eventIndex];
+                
+                if (event.type.startsWith('START')) {
+                    lane.running = true;
+                    lane.paused = false;
+                    lane.repStartTime = lane.lapStartTime = now;
+                    if (event.rep === 1 && lane.laps.length === 0) {
+                       lane.laps.push({ event, lapTime: 0, totalRepTime: 0 });
+                    }
+                }
+
+                const totalRepTime = now - lane.repStartTime;
+                
                 const prevEvent = eventIndex > 0 ? pmState.lapSchedule[eventIndex - 1] : {distanceInRep: 0, rep: event.rep};
                 const lastLapOfPrevRep = lane.laps.slice().reverse().find(l => l.event.rep === prevEvent.rep && l.event.distanceInRep === prevEvent.distanceInRep);
                 const prevRepTime = lastLapOfPrevRep ? lastLapOfPrevRep.totalRepTime : 0;
                 const lapTime = totalRepTime - prevRepTime;
 
-                lane.laps.push({ event, lapTime, totalRepTime, totalTime: now - pmState.startTime });
+                lane.laps.push({ event, lapTime, totalRepTime });
                 lane.lastLapTime = lapTime;
                 
                 if (!event.type.startsWith('START')) {
                     lane.displayFrozen = true;
                     setTimeout(() => { lane.displayFrozen = false; }, 3000);
                 }
-            });
 
-            if (event.type.startsWith('FINISH') && pmState.nextLapIndex < pmState.lapSchedule.length - 1) {
-                pmState.paused = true;
-            }
+                if (event.type.startsWith('FINISH') && lane.nextLapIndex < pmState.lapSchedule.length - 1) {
+                    lane.paused = true;
+                }
 
-            pmState.lapStartTime = now;
-            pmState.nextLapIndex++;
-            if (pmState.nextLapIndex >= pmState.lapSchedule.length) {
-                pmState.running = false;
-                pmState.paused = true;
-            }
-            
-            updatePmDisplays();
-        };
-        document.querySelectorAll('.pm-lap-btn').forEach(btn => btn.onclick = handleLapPress);
+                lane.lapStartTime = now;
+                lane.nextLapIndex++;
+                if (lane.nextLapIndex >= pmState.lapSchedule.length) {
+                    lane.running = false;
+                    lane.paused = true;
+                }
+                
+                updatePmDisplays();
+            };
+        });
     }
 
     function updatePmDisplays() {
-        const nextEvent = pmState.lapSchedule[pmState.nextLapIndex];
-        let btnText = "START(1)";
-        let btnColorClass = 'bg-green-500';
+        pmState.lanes.forEach(lane => {
+            const nextEvent = pmState.lapSchedule[lane.nextLapIndex];
+            const btn = document.querySelector(`.pm-lap-btn[data-lane-id="${lane.id}"]`);
+            if (!btn) return;
+            
+            let btnText = `START(${pmState.lapSchedule[0].rep})`;
+            let btnColorClass = 'bg-green-500';
 
-        if (pmState.nextLapIndex > 0) { // After first start
-            if (!pmState.running && pmState.paused) { // Finished
-                 btnText = "終了";
-                 btnColorClass = 'bg-orange-500';
-                 document.querySelectorAll('.pm-lap-btn').forEach(b => {
-                    b.onclick = (e) => {
+            if (lane.nextLapIndex > 0) {
+                if (!lane.running && lane.paused) { // Finished
+                    btnText = "終了";
+                    btnColorClass = 'bg-orange-500';
+                    btn.onclick = (e) => {
                         handleButtonInteraction(e);
                         showPmSummary();
                     };
-                    b.nextElementSibling.textContent = '練習終了';
-                 });
-            } else if (nextEvent) {
-                btnText = nextEvent.type;
-                if (btnText.startsWith('START')) {
-                    btnColorClass = 'bg-green-500';
-                } else if (btnText.startsWith('FINISH')) {
-                    btnColorClass = 'bg-red-500';
-                } else { // PASS
-                    btnColorClass = 'bg-gray-700';
-                }
-                
-                pmState.lanes.forEach(lane => {
+                    btn.nextElementSibling.textContent = '練習終了';
+                } else if (nextEvent) {
+                    btnText = nextEvent.type;
+                    if (btnText.startsWith('START')) {
+                        btnColorClass = 'bg-green-500';
+                    } else if (btnText.startsWith('FINISH')) {
+                        btnColorClass = 'bg-red-500';
+                    } else { // PASS
+                        btnColorClass = 'bg-gray-700';
+                    }
+                    
                     const targetInfoEl = document.getElementById(`pm-target-info-${lane.id}`);
                     if (lane.pace > 0) {
                         const targetCumulativeTime = nextEvent.distanceInRep * lane.pace;
@@ -759,16 +889,13 @@
                     } else {
                         targetInfoEl.textContent = '目標: ---';
                     }
-                });
+                }
             }
-        }
-        document.querySelectorAll('.pm-lap-btn').forEach(b => {
-            b.textContent = btnText;
-            b.classList.remove('bg-blue-500', 'bg-green-500', 'bg-red-500', 'bg-gray-700', 'bg-orange-500');
-            b.classList.add(btnColorClass);
-        });
-
-        pmState.lanes.forEach(lane => {
+            
+            btn.textContent = btnText;
+            btn.classList.remove('bg-blue-500', 'bg-green-500', 'bg-red-500', 'bg-gray-700', 'bg-orange-500');
+            btn.classList.add(btnColorClass);
+            
             const histEl = document.getElementById(`pm-history-${lane.id}`);
             histEl.innerHTML = lane.laps.map(lap => {
                 if (lap.event.distanceInRep === 0 && lap.event.type.startsWith('START')) return '';
@@ -776,20 +903,21 @@
             }).reverse().join('');
             histEl.scrollTop = 0;
         });
-        
-        const currentEvent = pmState.lapSchedule[pmState.nextLapIndex - 1] || pmState.lapSchedule[0];
+
+        const firstLane = pmState.lanes[0];
+        const currentEvent = pmState.lapSchedule[firstLane.nextLapIndex - 1] || pmState.lapSchedule[0];
         if(currentEvent) document.getElementById('pm-info-bar').textContent = `本数: ${currentEvent.rep} / ${pmState.settings.N}`;
     }
 
     function tickPacemaker() {
-        if (!pmState.running || pmState.paused) return;
+        if (!pmState.lanes) return;
         const now = Date.now();
-        const repElapsed = now - pmState.repStartTime;
-        const lapElapsed = now - pmState.lapStartTime;
-        
-        const nextEvent = pmState.lapSchedule[pmState.nextLapIndex];
-
         pmState.lanes.forEach(lane => {
+            if (!lane.running || lane.paused) return;
+            const repElapsed = now - lane.repStartTime;
+            const lapElapsed = now - lane.lapStartTime;
+            const nextEvent = pmState.lapSchedule[lane.nextLapIndex];
+
             const repTimeEl = document.querySelector(`#pm-lane-${lane.id} .pm-main-time`);
             const lapTimeEl = document.querySelector(`#pm-lane-${lane.id} .pm-lap-live`);
             const laneEl = document.getElementById(`pm-lane-${lane.id}`);
@@ -803,15 +931,10 @@
                 if (lane.pace > 0 && nextEvent) {
                     const targetCumulativeTime = nextEvent.distanceInRep * lane.pace;
                     const diff = targetCumulativeTime - repElapsed;
-
                     laneEl.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
-                    if (diff < 0) {
-                        laneEl.classList.add('frame-bad');
-                    } else if (diff <= 5000) {
-                        laneEl.classList.add('frame-warn5');
-                    } else if (diff <= 10000) {
-                        laneEl.classList.add('frame-warn10');
-                    }
+                    if (diff < 0) laneEl.classList.add('frame-bad');
+                    else if (diff <= 5000) laneEl.classList.add('frame-warn5');
+                    else if (diff <= 10000) laneEl.classList.add('frame-warn10');
                 } else {
                     laneEl.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
                 }
@@ -820,8 +943,109 @@
     }
 
     /* ====== Custom Timer Mode ====== */
-    function stopCustomTimer(){} // dummy
-    function initCustom(){} // dummy
+    let customSteps = [];
+    let customTimerState = {
+        running: false, reps: 1, currentRep: 1,
+        currentStepIndex: 0, stepStartTime: 0, remainingTime: 0,
+    };
+
+    function initCustom() {
+        stopCustomTimer();
+        customSteps = [ { type: 'WORK', duration: 30 }, { type: 'REST', duration: 10 }];
+        document.getElementById('custom-settings').classList.remove('hidden');
+        document.getElementById('custom-runner').classList.add('hidden');
+        document.getElementById('custom-reps').value = 1;
+        renderCustomSteps();
+        wireCustomSettings();
+    }
+
+    function renderCustomSteps() {
+        const container = document.getElementById('custom-steps-container');
+        container.innerHTML = customSteps.map((step, index) => `
+            <div class="flex items-center gap-2 p-2 bg-gray-100 rounded-lg">
+                <span class="font-bold text-gray-600">${index + 1}.</span>
+                <select data-index="${index}" class="custom-step-type p-2 border rounded-md flex-grow">
+                    <option value="WORK" ${step.type === 'WORK' ? 'selected' : ''}>WORK</option>
+                    <option value="REST" ${step.type === 'REST' ? 'selected' : ''}>REST</option>
+                </select>
+                <input type="number" value="${step.duration}" data-index="${index}" class="custom-step-duration p-2 border rounded-md w-24" placeholder="秒">
+                <button data-index="${index}" class="custom-step-delete px-3 py-2 bg-red-500 text-white rounded-md font-bold">×</button>
+            </div>
+        `).join('');
+    }
+
+    function wireCustomSettings() {
+        const container = document.getElementById('custom-steps-container');
+        container.onchange = (e) => {
+            const index = parseInt(e.target.dataset.index);
+            if (e.target.classList.contains('custom-step-type')) customSteps[index].type = e.target.value;
+            if (e.target.classList.contains('custom-step-duration')) customSteps[index].duration = parseInt(e.target.value) || 0;
+        };
+        container.onclick = (e) => {
+            if (e.target.classList.contains('custom-step-delete')) {
+                handleButtonInteraction(e);
+                customSteps.splice(parseInt(e.target.dataset.index), 1);
+                renderCustomSteps();
+            }
+        };
+
+        document.getElementById('custom-add-step-btn').onclick = (e) => {
+            handleButtonInteraction(e);
+            customSteps.push({ type: 'WORK', duration: 30 });
+            renderCustomSteps();
+        };
+        document.getElementById('custom-start-btn').onclick = (e) => { handleButtonInteraction(e); startCustomTimer(); };
+        document.getElementById('custom-reset-btn').onclick = (e) => { handleButtonInteraction(e); initCustom(); };
+    }
+
+    function startCustomTimer() {
+        if (customSteps.length === 0) return;
+        customTimerState = {
+            running: true,
+            reps: parseInt(document.getElementById('custom-reps').value) || 1,
+            currentRep: 1, currentStepIndex: 0,
+            stepStartTime: Date.now(), remainingTime: customSteps[0].duration,
+        };
+        document.getElementById('custom-settings').classList.add('hidden');
+        document.getElementById('custom-runner').classList.remove('hidden');
+        updateCustomRunnerUI();
+    }
+
+    function stopCustomTimer() { customTimerState.running = false; }
+
+    function tickCustomTimer() {
+        if (!customTimerState.running) return;
+        const currentStep = customSteps[customTimerState.currentStepIndex];
+        const elapsed = (Date.now() - customTimerState.stepStartTime) / 1000;
+        customTimerState.remainingTime = currentStep.duration - elapsed;
+
+        if (customTimerState.remainingTime <= 0) {
+            customTimerState.currentStepIndex++;
+            if (customTimerState.currentStepIndex >= customSteps.length) {
+                customTimerState.currentRep++;
+                if (customTimerState.currentRep > customTimerState.reps) {
+                    stopCustomTimer(); initCustom(); return;
+                }
+                customTimerState.currentStepIndex = 0;
+            }
+            customTimerState.stepStartTime = Date.now();
+        }
+        updateCustomRunnerUI();
+    }
+
+    function updateCustomRunnerUI() {
+        const state = customTimerState;
+        const runnerEl = document.getElementById('custom-runner');
+        if (!state.running || customSteps.length === 0) {
+            runnerEl.classList.remove('work-bg', 'rest-bg'); return;
+        }
+        const currentStep = customSteps[state.currentStepIndex];
+        document.getElementById('custom-runner-set-info').textContent = `SET ${state.currentRep} / ${state.reps}`;
+        document.getElementById('custom-runner-step-info').textContent = `${currentStep.type} ${state.currentStepIndex + 1} / ${customSteps.length}`;
+        document.getElementById('custom-runner-time').textContent = fmtCustom(state.remainingTime);
+        runnerEl.classList.toggle('work-bg', currentStep.type === 'WORK');
+        runnerEl.classList.toggle('rest-bg', currentStep.type === 'REST');
+    }
 
     /* ====== Summary Modal ====== */
     function showSummary(data, onCloseCallback) {
@@ -880,11 +1104,55 @@
     /* ====== RAF Loop ====== */
     function loop() {
       if (currentScreen === 'split') tickSplit();
-      // if (currentScreen === 'custom') tickCustomTimer();
+      if (currentScreen === 'custom') tickCustomTimer();
       if (currentScreen === 'pm') tickPacemaker();
       requestAnimationFrame(loop);
     }
    
+    function recalibratePmLayout(){
+        const grid = document.getElementById('pm-runner-grid');
+        if (!grid || !pmState.lanes) return;
+        const count = pmState.lanes.length;
+
+        if (count <= 2) {
+            grid.style.gridTemplateColumns = '1fr';
+            grid.style.gridTemplateRows = `repeat(${count}, 1fr)`;
+        } else { // 3 or 4
+            grid.style.gridTemplateColumns = '1fr 1fr';
+            grid.style.gridTemplateRows = '1fr 1fr';
+        }
+        
+        const root = document.documentElement;
+        const cards = grid.querySelectorAll('.pm-lane');
+
+        let fontMain, fontLive, btnH, gap = '', padding = '';
+
+        if (count <= 1) {
+            fontMain = 'clamp(28px, 8vw, 40px)';
+            fontLive = 'clamp(22px, 6vw, 32px)';
+            btnH = '76px';
+        } else if (count === 2) {
+            fontMain = 'clamp(24px, 6.5vw, 32px)';
+            fontLive = 'clamp(20px, 5vw, 26px)';
+            btnH = '64px';
+            gap = '4px';
+        } else { // 3 or 4
+            fontMain = 'clamp(20px, 5vw, 26px)';
+            fontLive = 'clamp(16px, 4vw, 22px)';
+            btnH = '48px';
+            gap = '2px';
+            padding = '6px';
+        }
+        
+        root.style.setProperty('--font-main', fontMain);
+        root.style.setProperty('--font-live', fontLive);
+        root.style.setProperty('--pm-btn-h', btnH);
+        cards.forEach(c => {
+            c.style.gap = gap;
+            c.style.padding = padding;
+        });
+    }
+
     function recalibrateSplitLayout(){
         const grid = document.getElementById('split-grid');
         if (!grid) return;
@@ -902,19 +1170,44 @@
         }
         
         const root = document.documentElement;
+        const cards = grid.querySelectorAll('.runner-card');
+        let fontMain, fontLive, btnH, gap = '', padding = '';
+
         if (count <= 2) {
-            root.style.setProperty('--font-main', 'clamp(28px, 8vw, 40px)');
-            root.style.setProperty('--font-live', 'clamp(22px, 6vw, 32px)');
-            root.style.setProperty('--btn-h', '56px');
+            fontMain = 'clamp(28px, 8vw, 40px)';
+            fontLive = 'clamp(22px, 6vw, 32px)';
+            btnH = '56px';
+            gap = '6px';
+            padding = '8px';
         } else if (count <= 4) {
-            root.style.setProperty('--font-main', 'clamp(24px, 6.5vw, 32px)');
-            root.style.setProperty('--font-live', 'clamp(20px, 5vw, 26px)');
-            root.style.setProperty('--btn-h', '48px');
+            fontMain = 'clamp(24px, 6.5vw, 32px)';
+            fontLive = 'clamp(20px, 5vw, 26px)';
+            btnH = '48px';
+            gap = '4px';
+            padding = '8px';
         } else { // 5 or 6
-            root.style.setProperty('--font-main', 'clamp(20px, 5vw, 26px)');
-            root.style.setProperty('--font-live', 'clamp(16px, 4vw, 22px)');
-            root.style.setProperty('--btn-h', '44px');
+            fontMain = 'clamp(20px, 5vw, 26px)';
+            fontLive = 'clamp(16px, 4vw, 22px)';
+            btnH = '44px';
+            gap = '2px';
+            padding = '6px';
         }
+        
+        root.style.setProperty('--font-main', fontMain);
+        root.style.setProperty('--font-live', fontLive);
+        root.style.setProperty('--btn-h', btnH);
+        cards.forEach(c => {
+            c.style.gap = gap;
+            c.style.padding = padding;
+            // Adjust time display gap for smaller sizes
+            if(count > 4) {
+                c.querySelector('.runner-main-time').style.marginBottom = '-0.25em';
+                c.querySelector('.runner-lap-live').style.marginBottom = '-0.25em';
+            } else {
+                c.querySelector('.runner-main-time').style.marginBottom = '';
+                c.querySelector('.runner-lap-live').style.marginBottom = '';
+            }
+        });
     }
  
     loop();
@@ -922,4 +1215,5 @@
   </script>
 </body>
 </html>
+
 
