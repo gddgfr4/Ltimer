@@ -526,12 +526,36 @@
    
     /* ====== Split Mode ====== */
     const splitGrid = document.getElementById('split-grid');
+
+    function updateSharedWatches(updateLogic) {
+        if (!sessionRef) {
+            watches = updateLogic(watches || []);
+            renderSplit();
+            return;
+        }
+        sessionRef.child('watches').transaction(currentWatches => {
+            return updateLogic(currentWatches || []);
+        });
+    }
    
     function initSplit(isShared) {
       shareControls.classList.toggle('hidden', !isShared);
       standaloneControls.classList.toggle('hidden', isShared);
-      watches = [{id:0,name:'タイマー 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
-      renderSplit();
+      
+      const initialWatches = [{id:0,name:'タイマー 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+
+      if (isShared) {
+        sessionRef.child('watches').transaction(currentData => {
+            if (currentData === null) {
+                return initialWatches;
+            }
+            // If data exists, do nothing, let the listener handle it.
+            return; 
+        });
+      } else {
+        watches = initialWatches;
+        renderSplit();
+      }
     }
  
     function renderSplit(){
@@ -560,47 +584,67 @@
       splitGrid.querySelectorAll('button[data-action="delete"]').forEach(btn => {
           btn.onclick = (e) => {
               handleButtonInteraction(e);
-              if (watches.length <= 1 && !sessionRef) return;
-              watches = watches.filter(w => w.id !== +e.currentTarget.dataset.id);
-              if(sessionRef) syncWatchesToFirebase(); else renderSplit();
+              const idToDelete = +e.currentTarget.dataset.id;
+              updateSharedWatches(currentWatches => {
+                  if (currentWatches.length <= 1) return currentWatches;
+                  return currentWatches.filter(w => w.id !== idToDelete);
+              });
           };
       });
+
       splitGrid.querySelectorAll('input').forEach(el => {
         el.onchange = (e) => {
-            const sw = watches.find(w => w.id === +e.currentTarget.dataset.id);
-            if (!sw) return;
-            if (e.currentTarget.classList.contains('runner-name-input')) sw.name = e.currentTarget.value;
-            else if (e.currentTarget.classList.contains('target-lap-input')) sw.target = parseFloat(e.currentTarget.value) || 0;
-            if(sessionRef) syncWatchesToFirebase();
+            const id = +e.currentTarget.dataset.id;
+            const classList = e.currentTarget.classList;
+            const value = e.currentTarget.value;
+            
+            updateSharedWatches(currentWatches => {
+                const sw = currentWatches.find(w => w.id === id);
+                if (!sw) return currentWatches;
+                if (classList.contains('runner-name-input')) sw.name = value;
+                else if (classList.contains('target-lap-input')) sw.target = parseFloat(value) || 0;
+                return currentWatches;
+            });
         };
       });
+
       splitGrid.querySelectorAll('.runner-actions button').forEach(btn => {
         btn.onclick = (e) => {
           handleButtonInteraction(e);
           const {id, action} = e.currentTarget.dataset;
-          const sw = watches.find(w => w.id === +id);
-          if (!sw) return;
-          if (action === 'start') {
-            sw.running = !sw.running;
-            if (sw.running) sw.start = Date.now() - sw.elapsed;
-            if(sessionRef) syncWatchesToFirebase(); else renderSplit();
-          } else if (action === 'lap' && sw.running) {
-            sw.laps = sw.laps || [];
-            const lapTime = sw.elapsed - sw.lastLap;
-            sw.laps.push(lapTime);
-            sw.lastLap = sw.elapsed;
-            if(sessionRef) syncWatchesToFirebase(); else renderSplit();
-            setTimeout(() => {
+          updateSharedWatches(currentWatches => {
+            const sw = currentWatches.find(w => w.id === +id);
+            if (!sw) return currentWatches;
+            const now = Date.now();
+
+            if (action === 'start') {
+              sw.running = !sw.running;
+              if (sw.running) {
+                  sw.start = now - sw.elapsed;
+              } else {
+                  sw.elapsed = now - sw.start;
+              }
+            } else if (action === 'lap' && sw.running) {
+              sw.laps = sw.laps || [];
+              const lapTime = (now - sw.start) - sw.lastLap;
+              sw.laps.push(lapTime);
+              sw.lastLap = now - sw.start;
+              
+              // Freeze display locally for 3s
+              setTimeout(() => {
                 const liveEl = document.querySelector(`#w-${id} .runner-lap-live`);
                 if (liveEl) {
                     liveEl.textContent = fmt(lapTime);
                     liveEl.dataset.frozen = "true";
                     setTimeout(() => { delete liveEl.dataset.frozen; }, 3000);
                 }
-            }, 50);
-          }
+              }, 50);
+            }
+            return currentWatches;
+          });
         }
       });
+      
       standaloneControls.querySelectorAll('button').forEach(b => {
         b.onclick = (e) => {
           handleButtonInteraction(e);
@@ -616,7 +660,12 @@
               watches.forEach(w => { if(!w.running){ w.running = true; w.start = Date.now() - w.elapsed; }}); 
               renderSplit();
           } else if (action === 'stop-all') { 
-              watches.forEach(w => w.running = false); 
+              watches.forEach(w => {
+                if (w.running) {
+                    w.running = false;
+                    w.elapsed = Date.now() - w.start;
+                }
+              }); 
               renderSplit();
           } else if (action === 'review-reset' && !watches.some(w=>w.running)) { 
             if (watches.some(w => w.laps && w.laps.length > 0)) {
@@ -631,8 +680,12 @@
  
     function tickSplit() {
       const now = Date.now();
-      watches.forEach(sw => { if (sw.running) sw.elapsed = now - sw.start; });
-      if (sessionRef && userId === 'user1' && watches.some(w=>w.running)) syncWatchesToFirebase();
+      watches.forEach(sw => {
+          if (sw.running) {
+            sw.elapsed = now - sw.start;
+          }
+      });
+      
       watches.forEach(sw => {
           const card = document.getElementById('w-' + sw.id);
           if (!card) return;
@@ -642,7 +695,7 @@
              if (!liveEl.dataset.frozen) liveEl.textContent = fmt(sw.elapsed - sw.lastLap);
           }
           if (sw.target > 0 && sw.running) {
-              const diff = (sw.target * 1000) - (sw.elapsed - sw.lastLap);
+              const diff = (sw.target * 1000) - (now - sw.start - sw.lastLap);
               card.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
               if (diff < 0) card.classList.add('frame-bad');
               else if (diff <= 5000) card.classList.add('frame-warn5');
@@ -1215,5 +1268,4 @@
   </script>
 </body>
 </html>
-
 
