@@ -247,102 +247,76 @@
       storageBucket: "ltimer-5959a.firebasestorage.app",
       messagingSenderId: "1092398779393",
       appId: "1:1092398779393:web:7f78c518df7fd08370c400",
-      measurementId: "G-T9PTZJ1B92"
     };
     // ▲▲▲ ここまで ▲▲▲
-  
-    let firebaseApp;
     let database;
     try {
-      firebaseApp = firebase.initializeApp(firebaseConfig);
+      firebase.initializeApp(firebaseConfig);
       database = firebase.database();
-    } catch (e) {
-      console.error("Firebaseの初期化に失敗。設定が正しいか確認してください。");
-    }
+    } catch (e) { console.error("Firebaseの初期化に失敗。"); }
   
     let sessionRef = null;
     let watches = [];
     let userId = null;
-    let sessionPasscode = '';
     const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000; // 3時間
   
     /* ==================================
-     * 画面要素の取得
+     * 画面要素
      * ================================== */
     const screens = {
-      share:   document.getElementById('screen-share'),
-      chooser: document.getElementById('screen-chooser'),
-      split:   document.getElementById('screen-split'),
-      pm:      document.getElementById('screen-pm'),
-      custom:  document.getElementById('screen-custom'),
+      share: document.getElementById('screen-share'),
+      split: document.getElementById('screen-split'),
     };
-    const backWrap = document.getElementById('back');
-    let currentScreen = 'share';
-  
+    const splitGrid = document.getElementById('split-grid');
     const shareControls = document.getElementById('share-controls');
-    const standaloneControls = document.getElementById('standalone-controls');
-    const shareStatus = document.getElementById('share-status');
+    const mainControls = document.getElementById('main-controls');
     const readyBtn1 = document.getElementById('share-ready-btn-1');
     const readyBtn2 = document.getElementById('share-ready-btn-2');
   
     /* ==================================
-     * 画面遷移ロジック
+     * 画面遷移
      * ================================== */
     function showScreen(screenName) {
-      Object.values(screens).forEach(el => { if(el) el.classList.add('hidden'); });
-      if (screens[screenName]) {
-        screens[screenName].classList.remove('hidden');
-        currentScreen = screenName;
-      }
-      backWrap.classList.toggle('hidden', ['share', 'chooser'].includes(screenName));
+      Object.values(screens).forEach(el => el.classList.add('hidden'));
+      screens[screenName].classList.remove('hidden');
       if (screenName === 'split') recalibrateSplitLayout();
     }
     showScreen('share');
   
     /* ==================================
-     * 共有モード接続処理（有効期限機能付き）
+     * 共有モード接続
      * ================================== */
     document.getElementById('share-connect-btn').onclick = () => {
-      sessionPasscode = document.getElementById('share-passcode').value.trim();
-      if (!sessionPasscode) return alert('合言葉を入力してください');
-      connectToSession();
+      const passcode = document.getElementById('share-passcode').value.trim();
+      if (!passcode) return alert('合言葉を入力してください');
+      if (!database) return alert("共有機能の初期化に失敗しました。");
+  
+      sessionRef = database.ref('sessions/' + passcode);
+      sessionRef.once('value', snapshot => {
+        const sessionData = snapshot.val();
+        const now = Date.now();
+        if (sessionData && sessionData.createdAt && (now - sessionData.createdAt > SESSION_EXPIRATION_MS)) {
+          sessionRef.remove().then(() => joinSession(true));
+        } else {
+          joinSession(sessionData === null);
+        }
+      });
     };
   
     document.getElementById('share-standalone-btn').onclick = () => {
       sessionRef = null;
-      showScreen('chooser');
+      userId = null;
+      initSplit(false);
+      showScreen('split');
     };
   
-    function connectToSession() {
-      if (!database) return alert("共有機能の初期化に失敗しました。");
-      sessionRef = database.ref('sessions/' + sessionPasscode);
-      
-      sessionRef.once('value', snapshot => {
-          const sessionData = snapshot.val();
-          const now = Date.now();
-  
-          if (sessionData && sessionData.createdAt && (now - sessionData.createdAt > SESSION_EXPIRATION_MS)) {
-              sessionRef.remove().then(() => {
-                  console.log("古いセッションを削除しました:", sessionPasscode);
-                  joinSession(true); // 新規セッションとして参加
-              });
-          } else {
-              joinSession(sessionData === null); // データがなければ新規
-          }
-      });
-    }
-  
     function joinSession(isNewSession) {
-      sessionRef.child('users').transaction(currentUsers => {
-        currentUsers = currentUsers || {};
-        if (!currentUsers.user1) {
-          userId = 'user1';
-          currentUsers.user1 = { connected: true, ready: false };
-        } else if (!currentUsers.user2) {
-          userId = 'user2';
-          currentUsers.user2 = { connected: true, ready: false };
-        } else { return; }
-        return currentUsers;
+      sessionRef.child('users').transaction(users => {
+        users = users || {};
+        if (!users.user1) { userId = 'user1'; users.user1 = { ready: false }; }
+        else if (!users.user2) { userId = 'user2'; users.user2 = { ready: false }; }
+        else { return; } // Abort
+        return users;
       }).then(result => {
         if (!result.committed || !userId) {
           alert('このセッションは満員です。');
@@ -352,192 +326,194 @@
         if (isNewSession && userId === 'user1') {
           sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
         }
-        
-        const myUserRef = sessionRef.child('users').child(userId);
-        myUserRef.onDisconnect().update({ connected: false, ready: false });
-  
+        sessionRef.child('users').child(userId).onDisconnect().remove();
         listenToSessionChanges();
-        showScreen('chooser');
+        initSplit(true);
+        showScreen('split');
       });
     }
   
     /* ==================================
-     * Firebaseデータ監視・書き込み
+     * Firebase データ同期
      * ================================== */
     function listenToSessionChanges() {
-      sessionRef.on('value', (snapshot) => {
-        if (!snapshot.exists()) return;
-        const sessionData = snapshot.val();
-        updateUsersStatusUI(sessionData.users);
-        const newWatches = sessionData.watches || [];
+      sessionRef.on('value', snapshot => {
+        if (!snapshot.exists()) {
+          alert("セッションが終了しました。");
+          showScreen('share');
+          return;
+        };
+        const data = snapshot.val();
+        updateUsersStatusUI(data.users);
+        const newWatches = data.watches || [];
         if (JSON.stringify(watches) !== JSON.stringify(newWatches)) {
           watches = newWatches;
-          if(currentScreen === 'split') renderSplit();
+          renderSplit();
         }
       });
     }
   
-    function updateUsersStatusUI(users) { /* ... 前回のコードと同じ ... */ }
-    function syncWatchesToFirebase() { if (sessionRef) sessionRef.child('watches').set(watches); }
+    function updateUsersStatusUI(users = {}) {
+      const u1 = users.user1 || { ready: false };
+      const u2 = users.user2 || {};
+      readyBtn1.textContent = `ユーザー1: ${u1.ready ? 'OK' : '...'}`;
+      readyBtn1.className = `w-full py-2 rounded text-sm ${u1.ready ? 'bg-green-500 text-white' : 'border-2 border-gray-400'}`;
+      readyBtn2.textContent = u2.ready === undefined ? '(待機中)' : `ユーザー2: ${u2.ready ? 'OK' : '...'}`;
+      readyBtn2.className = `w-full py-2 rounded text-sm ${u2.ready ? 'bg-green-500 text-white' : 'border-2 border-gray-400'}`;
+    }
+    
+    function syncWatchesToFirebase() {
+      if (sessionRef) sessionRef.child('watches').set(watches);
+    }
   
     readyBtn1.onclick = () => { if(userId === 'user1') toggleReady(); };
     readyBtn2.onclick = () => { if(userId === 'user2') toggleReady(); };
     function toggleReady() {
       if (!sessionRef || !userId) return;
       const myReadyRef = sessionRef.child('users').child(userId).child('ready');
-      myReadyRef.once('value', snapshot => { myReadyRef.set(!snapshot.val()); });
+      myReadyRef.once('value', snapshot => myReadyRef.set(!snapshot.val()));
     }
-    
+  
     /* ==================================
-     * ここから下はアプリの基本機能
+     * ペース走モード (Split)
      * ================================== */
-    document.getElementById('choose-split').onclick = () => {
-      if (sessionRef) {
-        shareControls.classList.remove('hidden');
-        standaloneControls.classList.add('hidden');
-        initSplit(true);
-      } else {
-        shareControls.classList.add('hidden');
-        standaloneControls.classList.remove('hidden');
-        initSplit(false);
-      }
-      showScreen('split');
-    };
-    document.getElementById('choose-pm').onclick = () => { initPacemaker(); showScreen('pm'); };
-    document.getElementById('choose-custom').onclick = () => { initCustom(); showScreen('custom'); };
-    backWrap.querySelector('button').onclick = () => {
-        if(sessionRef && userId) {
-            sessionRef.child('users').child(userId).update({ connected: false, ready: false });
-            sessionRef.off(); sessionRef = null; userId = null;
-        }
-        showScreen('chooser');
-    };
-    
-    /* ====== Split Mode ====== */
-    let rafId;
-    const splitGrid = document.getElementById('split-grid');
-    
     function initSplit(isShared) {
-      if(isShared) {
-          if(userId === 'user1') {
-              sessionRef.child('watches').once('value', snapshot => {
-                  if(!snapshot.exists()){ // 誰も時計を作っていなければ初期化
-                      watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
-                      syncWatchesToFirebase();
-                  }
-              });
-          }
+      shareControls.classList.toggle('hidden', !isShared);
+      if (isShared) {
+        if (userId === 'user1') {
+          sessionRef.child('watches').once('value', snapshot => {
+            if (!snapshot.exists()) {
+              watches = [{id: 0, name: '時計 1', running: false, start: 0, elapsed: 0, lastLap: 0, laps: [], target: 0}];
+              syncWatchesToFirebase();
+            }
+          });
+        }
       } else {
-          watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+        watches = [{id: 0, name: '時計 1', running: false, start: 0, elapsed: 0, lastLap: 0, laps: [], target: 0}];
       }
       renderSplit();
     }
   
-    function renderSplit(){
-      splitGrid.innerHTML = watches.map(sw=>{
-        let cum=0; const hist = (sw.laps || []).map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
-          .map(h=>`<div class="hist-line"><span class="hist-n">${h.n}</span> ${fmt(h.lap)} <span class="hist-cum">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
+    function renderSplit() {
+      splitGrid.innerHTML = watches.map(sw => {
+        const hist = (sw.laps || []).map((lap, i) => `<div class="hist-line"><span class="hist-n">${i+1}</span> ${fmt(lap)}</div>`).join('');
         return `<div class="split-card relative" id="w-${sw.id}">
           <button data-id="${sw.id}" data-action="delete" class="absolute top-2 right-2 w-6 h-6 bg-gray-300 text-gray-700 rounded-full flex items-center justify-center text-lg font-bold hover:bg-red-500 hover:text-white">×</button>
           <div class="split-card-header">
             <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input p-1 bg-gray-100 rounded font-bold">
-            <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${(sw.target||0)>0?sw.target:''}" class="target-lap-input border-2 rounded">
+            <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${(sw.target || 0) > 0 ? sw.target : ''}" class="target-lap-input border-2 rounded">
           </div>
           <div class="split-main-time timer-font text-gray-900">${fmt(sw.elapsed)}</div>
-          <div class="split-lap-live timer-font" id="live-${sw.id}">${fmt(sw.elapsed - sw.lastLap)}</div>
-          <div class="split-lap-history">${hist}</div>
+          <div class="split-lap-live timer-font text-gray-500">${fmt(sw.elapsed - sw.lastLap)}</div>
+          <div class="split-lap-history">${hist || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>'}</div>
           <div class="split-actions">
-            <button data-id="${sw.id}" data-action="start" class="btn-start text-white font-bold rounded ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
-            <button data-id="${sw.id}" data-action="lap" class="btn-lap text-white font-bold rounded bg-gray-700">LAP (${(sw.laps||[]).length+1})</button>
+            <button data-id="${sw.id}" data-action="start" class="btn-start text-white font-bold rounded ${sw.running ? 'bg-red-500' : 'bg-green-500'}">${sw.running ? 'STOP' : 'START'}</button>
+            <button data-id="${sw.id}" data-action="lap" class="btn-lap text-white font-bold rounded bg-gray-700">LAP (${(sw.laps || []).length + 1})</button>
           </div>
-        </div>`; }).join('');
+        </div>`;
+      }).join('');
       recalibrateSplitLayout();
-      wireSplit();
+      wireEvents();
     }
   
-    function wireSplit() {
-      // 削除ボタン
-      splitGrid.querySelectorAll('button[data-action="delete"]').forEach(btn => {
-          btn.onclick = (e) => {
-              if (watches.length <= 1) return; // 最後の1つは消せない
-              const idToDelete = +e.currentTarget.dataset.id;
-              watches = watches.filter(w => w.id !== idToDelete);
-              if(sessionRef) syncWatchesToFirebase(); else renderSplit();
-          };
-      });
-      // 入力
-      splitGrid.querySelectorAll('input').forEach(el => {
-        el.onchange = (e) => { /* ... */ };
-      });
-      // START/LAPボタン
-      splitGrid.querySelectorAll('.split-actions button').forEach(btn => {
-        btn.onclick = (e) => {
+    function wireEvents() {
+      // 個別カード内のボタンと入力
+      splitGrid.querySelectorAll('button, input').forEach(el => {
+        const action = el.dataset.action || el.type;
+        const handler = (e) => {
           const id = +e.currentTarget.dataset.id;
-          const action = e.currentTarget.dataset.action;
-          const sw = watches.find(w => w.id === id);
-          if (!sw) return;
-          if (action === 'start') {
-            sw.running = !sw.running;
-            if (sw.running) sw.start = Date.now() - sw.elapsed;
+          let sw = watches.find(w => w.id === id);
+          
+          if (action === 'delete') {
+            if (watches.length > 1) watches = watches.filter(w => w.id !== id);
+          } else if (sw) {
+            switch (action) {
+              case 'start':
+                sw.running = !sw.running;
+                if (sw.running) sw.start = Date.now() - sw.elapsed;
+                break;
+              case 'lap':
+                if (sw.running) {
+                  sw.laps = sw.laps || [];
+                  sw.laps.push(sw.elapsed - sw.lastLap);
+                  sw.lastLap = sw.elapsed;
+                }
+                break;
+              case 'text': sw.name = el.value; break;
+              case 'number': sw.target = parseFloat(el.value) || 0; break;
+            }
           }
-          if (action === 'lap' && sw.running) {
-            sw.laps = sw.laps || [];
-            const lap = sw.elapsed - sw.lastLap;
-            sw.laps.push(lap);
-            sw.lastLap = sw.elapsed;
-          }
-          if(sessionRef) syncWatchesToFirebase(); else renderSplit();
-        }
+          if (sessionRef) syncWatchesToFirebase(); else renderSplit();
+        };
+  
+        if (el.tagName === 'INPUT') el.onchange = handler; else el.onclick = handler;
       });
+  
       // マスターコントロール
-      standaloneControls.querySelectorAll('button').forEach(b => {
-        b.onclick = (e) => {
+      mainControls.querySelectorAll('button').forEach(btn => {
+        btn.onclick = (e) => {
           const action = e.currentTarget.dataset.action;
-          if (action === 'add' && watches.length < 6) { 
-              const newId = (watches.length > 0) ? Math.max(...watches.map(w => w.id)) + 1 : 0;
-              watches.push({id:newId, name:`時計 ${newId+1}`, running:false, start:0, elapsed:0, lastLap:0, laps:[], target:0});
+          const now = Date.now();
+          switch (action) {
+            case 'add':
+              if (watches.length < 4) {
+                const newId = watches.length > 0 ? Math.max(...watches.map(w => w.id)) + 1 : 0;
+                watches.push({id: newId, name: `時計 ${newId + 1}`, running: false, start: 0, elapsed: 0, lastLap: 0, laps: [], target: 0});
+              }
+              break;
+            case 'start-all':
+              watches.forEach(w => { if (!w.running) { w.running = true; w.start = now - w.elapsed; }});
+              break;
+            case 'stop-all':
+              watches.forEach(w => w.running = false);
+              break;
+            case 'reset-all':
+              if (!watches.some(w => w.running)) initSplit(!!sessionRef);
+              break;
+            case 'back':
+              if (sessionRef) sessionRef.child('users').child(userId).remove();
+              sessionRef = null; userId = null;
+              showScreen('share');
+              return;
           }
-          if (action === 'start-all') { watches.forEach(w => { if(!w.running){ w.running = true; w.start = Date.now() - w.elapsed; }}); }
-          if (action === 'stop-all') { watches.forEach(w => w.running = false); }
-          if (action === 'reset-all' && !watches.some(w=>w.running)) { initSplit(false); }
-          renderSplit();
-        }
+          if (sessionRef) syncWatchesToFirebase(); else renderSplit();
+        };
       });
     }
   
-    function tickSplit() {
+    function tick() {
       const now = Date.now();
-      let needsSync = false;
-      watches.forEach(sw => { if (sw.running) sw.elapsed = now - sw.start; });
-  
-      // 共有モードではリーダー（ユーザー1）が定期的に同期する
-      if (sessionRef && userId === 'user1' && watches.some(w=>w.running)) {
-          syncWatchesToFirebase();
-      }
+      if (!watches.some(w => w.running)) return;
       
-      // UI更新は全クライアントがローカルで行う
-      watches.forEach(sw => {
-          if (!sw.running) return;
-          const card = document.getElementById('w-' + sw.id);
-          if (!card) return;
-          card.querySelector('.split-main-time').textContent = fmt(sw.elapsed);
-          card.querySelector('.split-lap-live').textContent = fmt(sw.elapsed - sw.lastLap);
-      });
+      watches.forEach(w => { if (w.running) w.elapsed = now - w.start; });
+      
+      if (sessionRef && userId === 'user1') {
+          syncWatchesToFirebase();
+      } else if (!sessionRef) {
+          watches.forEach(sw => {
+              const card = document.getElementById('w-' + sw.id);
+              if (!card || !sw.running) return;
+              card.querySelector('.split-main-time').textContent = fmt(sw.elapsed);
+              card.querySelector('.split-lap-live').textContent = fmt(sw.elapsed - sw.lastLap);
+          });
+      }
     }
   
-    /* ====== RAF Loop ====== */
-    function loop() {
-      if (currentScreen === 'split') tickSplit();
-      requestAnimationFrame(loop);
-    }
-    
-    // 他のモードの関数定義や呼び出しはここに...
-    function recalibrateSplitLayout(){ /* ... */ }
-    function initPacemaker(){ /* ... */ }
-    function initCustom(){ /* ... */ }
+    /* ==================================
+     * 補助関数
+     * ================================== */
+    const fmt = (ms = 0) => {
+      const d = new Date(ms);
+      const m = String(d.getUTCMinutes());
+      const s = String(d.getUTCSeconds()).padStart(2, '0');
+      const h = String(Math.floor(d.getUTCMilliseconds() / 10)).padStart(2, '0');
+      return `${m}:${s}.${h}`;
+    };
   
-    loop();
+    function recalibrateSplitLayout() { /* ...レイアウト調整... */ }
+    setInterval(tick, 100);
   });
   </script>
+    
 </body>
 </html>
