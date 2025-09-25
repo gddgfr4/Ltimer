@@ -1,1085 +1,925 @@
 <!DOCTYPE html>
-
 <html lang="ja">
-
 <head>
-
-  <meta charset="UTF-8" />
-
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
-
-  <title>多機能トレーニングタイマー Pro — Mobile</title>
-
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <style>
-
-    :root{
-
-      --approaching-warn-color:#facc15; /* yellow-400 */
-
-      --approaching-imminent-color:#fb923c; /* orange-400 */
-
-      --exceeded-color:#f87171; /* red-400 */
-
-      --work-color:#4ade80; /* green-400 */
-
-      --rest-color:#60a5fa; /* blue-400 */
-
-      /* 動的フォント/サイズ（JSで行数に応じて上書き） */
-
-      --font-main:32px;  /* Total */
-
-      --font-live:28px;  /* Lap live */
-
-      --font-small:16px; /* small text */
-
-      --btn-h:56px;      /* 各カードのボタン高さ(基準) */
-
-      --master-h:64px;   /* 下マスターの高さ */
-
-      --master-btn-py:12px; /* 下マスターのボタン上下padding */
-
-      --master-btn-fs:16px;  /* 下マスターのボタン文字 */
-
-      --pm-btn-h:76px; /* インターバルのボタンを大きく */
-
-    }
-
-
-
-    html,body{height:100dvh;margin:0;padding:0;overflow:hidden;background:#e5e7eb;touch-action:manipulation;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
-
-    .timer-font{font-variant-numeric:tabular-nums}
-
-
-
-    /* 画面: 選択/各モード */
-
-    .screen{position:relative; height:100%; width:100%;}
-
-    .hidden{display:none}
-
-
-
-    /* 戻るボタン */
-
-    .back-btn{position:fixed; left:env(safe-area-inset-left,8px); top:calc(env(safe-area-inset-top,8px) + 8px); z-index:60;}
-
-    .back-btn button{width:44px;height:44px;border-radius:9999px}
-
-
-
-    /* === Split Mode === */
-
-    .split-wrap{display:flex;flex-direction:column;height:100%;}
-
-    .split-grid{display:grid;flex:1 1 auto;padding:6px;gap:6px;overflow:hidden;}
-
-    .split-card{background:#F9FAFB;border-radius:12px;padding:8px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto 1fr auto;gap:6px;height:100%;transition:background-color .2s}
-
-
-
-    .split-card-header{grid-column:1/-1;display:grid;grid-template-columns:1fr minmax(86px,42%);gap:6px;align-items:center}
-
-    .split-name-input{min-width:0;text-align:left}
-
-    .target-lap-input{min-width:0;text-align:center;padding:4px 6px}
-
-
-
-    .split-main-time{grid-column:1/-1;font-size:var(--font-main);font-weight:800}
-
-    .split-lap-live{grid-column:1/-1;font-size:var(--font-live);font-weight:800;border-radius:8px;padding:4px 6px}
-
-    /* 枠全体に色付けするためのクラス（10秒前までは無色）*/
-
-    .frame-warn10{background:#fef3c7!important} /* amber-100 */
-
-    .frame-warn5 {background:#ffedd5!important} /* orange-100 */
-
-    .frame-bad   {background:#fee2e2!important} /* red-100 */
-
-
-
-    .split-lap-history{grid-column:1/-1;overflow-y:auto;min-height:1.6em;background:rgba(229,231,235,.8);border-radius:8px;padding:4px 6px;line-height:1.2;font-size:clamp(11px,2.8vw,13px)}
-
-    .split-lap-history .hist-line{margin-bottom:2px}
-
-    .split-lap-history .hist-n{margin-right:4px;font-weight:700}
-
-    .split-lap-history .hist-cum{margin-left:4px;color:#6b7280}
-
-
-
-    .split-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1.6fr;gap:6px} /* 左:START/STOP 右:LAP(横幅大) */
-
-    .btn-lap,.btn-start{height:var(--btn-h)} /* 同じ縦幅 */
-
-
-
-    .split-master{height:var(--master-h);background:#1f2937;color:white;display:flex;gap:8px;align-items:center;justify-content:space-around;padding:8px}
-
-    .split-master .btn{padding-top:var(--master-btn-py);padding-bottom:var(--master-btn-py);font-size:var(--master-btn-fs)}
-
-
-
-    /* === Pacemaker === */
-
-    .pm-grid{display:grid;grid-auto-rows:minmax(180px,1fr);gap:6px;height:100%;padding:6px;overflow:hidden}
-
-    .pm-lane{display:grid;grid-template-columns:2fr 3fr;grid-template-rows:1fr 1fr 1fr;background:#fff;border-radius:12px;padding:8px;transition:background-color .2s}
-
-    .pm-lane-main{grid-row:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-right:1px solid #e5e7eb}
-
-    .pm-lane-history{font-size:12px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px}
-
-    .pm-lane-rest{background:var(--rest-color)!important;color:#fff}
-
-    .pm-lap-btn{width:100%;height:var(--pm-btn-h);font-size:clamp(18px,5vw,24px);padding:12px 16px;border-radius:14px}
-
-
-
-    /* インターバル色付け（初期ロジック復元） */
-
-    .approaching-warn{ background-color: var(--approaching-warn-color)!important; }
-
-    .approaching-imminent{ background-color: var(--approaching-imminent-color)!important; }
-
-    .exceeded{ background-color: var(--exceeded-color)!important; color:#fff!important; }
-
-    .exceeded div,.exceeded span,.exceeded p,.exceeded input,.exceeded label{ color:#fff!important; }
-
-
-
-    /* === Custom Timer === */
-
-    .custom-runner{transition:background-color .3s}
-
-    .work-bg{background:var(--work-color)}
-
-    .rest-bg{background:var(--rest-color);color:#fff}
-
-
-
-    /* Summary modal */
-
-    .summary-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:70;padding:16px}
-
-    .summary-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
-
-    .summary-table{width:100%;border-collapse:collapse;margin-top:12px}
-
-    .summary-table th,.summary-table td{border:1px solid #d1d5db;padding:6px;text-align:center}
-
-    .summary-table th{background:#f3f4f6}
-
-
-
-    /* Help modal */
-
-    .help-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:80;padding:16px}
-
-    .help-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
-
-    .help-content h3{font-weight:700;margin-top:12px}
-
-    .help-content ul{list-style:disc;padding-left:1.25rem}
-
-
-
-    @media (max-width:430px){
-
-      .split-card{gap:4px;padding:6px}
-
-      .split-card-header{grid-template-columns:1fr minmax(80px,48%)}
-
-    }
-
-  </style>
-
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>多機能トレーニングタイマー Pro — Mobile</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{
+      --approaching-warn-color:#facc15; /* yellow-400 */
+      --approaching-imminent-color:#fb923c; /* orange-400 */
+      --exceeded-color:#f87171; /* red-400 */
+      --work-color:#4ade80; /* green-400 */
+      --rest-color:#60a5fa; /* blue-400 */
+      --font-main:clamp(28px, 8vw, 40px);
+      --font-live:clamp(22px, 6vw, 32px);
+      --btn-h:56px;
+      --master-h:64px;
+      --pm-btn-h:76px;
+    }
+    html,body{height:100dvh;margin:0;padding:0;overflow:hidden;background:#e5e7eb;touch-action:manipulation;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
+    .timer-font{font-variant-numeric:tabular-nums}
+    .screen{position:relative; height:100%; width:100%;}
+    .hidden{display:none}
+    .back-btn{position:fixed; left:env(safe-area-inset-left,8px); top:calc(env(safe-area-inset-top,8px) + 8px); z-index:60;}
+    .back-btn button{width:44px;height:44px;border-radius:9999px}
+
+    /* === Split & PM Mode Layout === */
+    .runner-wrap{display:flex;flex-direction:column;height:100%;}
+    .runner-grid{display:grid;flex:1 1 auto;padding:6px;gap:6px;overflow:hidden;}
+    .runner-card{background:#F9FAFB;border-radius:12px;padding:8px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto 1fr auto;gap:6px;height:100%;transition:background-color .2s; overflow:hidden;}
+    .runner-card-header{grid-column:1/-1;display:grid;grid-template-columns:1fr minmax(86px,42%);gap:6px;align-items:center}
+    .runner-name-input{min-width:0;text-align:left}
+    .target-lap-input{min-width:0;text-align:center;padding:4px 6px}
+    .runner-main-time{grid-column:1/-1;font-size:var(--font-main);font-weight:800}
+    .runner-lap-live{grid-column:1/-1;font-size:var(--font-live);font-weight:800;border-radius:8px;padding:4px 6px}
+    .runner-lap-history{grid-column:1/-1;overflow-y:auto;min-height:0;background:rgba(229,231,235,.8);border-radius:8px;padding:4px 6px;line-height:1.3;font-size:clamp(11px,2.8vw,13px)}
+    .runner-lap-history .hist-line{margin-bottom:2px}
+    .runner-lap-history .hist-n{margin-right:4px;font-weight:700}
+    .runner-lap-history .hist-cum{margin-left:4px;color:#6b7280}
+    .runner-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1.6fr;gap:6px}
+    .btn-lap,.btn-start{height:var(--btn-h)}
+
+    .frame-warn10{background:#fde047!important} /* yellow-300 */
+    .frame-warn5 {background:#fdba74!important} /* orange-300 */
+    .frame-bad   {background:#fca5a5!important} /* red-300 */
+    .pm-good { background-color: #dcfce7 !important; } /* green-100 */
+
+    .split-master{height:var(--master-h);background:#1f2937;color:white;display:flex;gap:8px;align-items:center;justify-content:space-around;padding:8px}
+    
+    /* === Pacemaker === */
+    .pm-runner-wrap {display:flex; flex-direction:column; height:100%}
+    .pm-info-bar {flex-shrink:0;}
+    .pm-grid{display:grid;flex:1 1 auto; padding:6px; gap:6px; overflow:hidden;}
+    .pm-lane{background:#fff;border-radius:12px;padding:8px;display:grid; grid-template-rows: auto auto auto 1fr auto; gap:6px; height:100%; overflow:hidden; transition: background-color .2s;}
+    .pm-main-time {font-size: var(--font-main); font-weight:800;}
+    .pm-lap-live {font-size: var(--font-live); font-weight:800; border-radius:8px; padding:4px 6px;}
+    .pm-lap-btn{width:100%;height:var(--pm-btn-h);font-size:clamp(16px,4vw,20px);padding:12px 16px;border-radius:14px}
+    
+    /* === Custom Timer === */
+    .custom-runner{transition:background-color .3s}
+    .work-bg{background:var(--work-color)}
+    .rest-bg{background:var(--rest-color);color:#fff}
+    /* Summary modal */
+    .summary-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:70;padding:16px}
+    .summary-content{background:#fff;border-radius:12px;padding:16px;width:100%;max-width:680px;max-height:90vh;overflow:auto}
+    .summary-table{width:100%;border-collapse:collapse;margin-top:12px}
+    .summary-table th,.summary-table td{border:1px solid #d1d5db;padding:6px;text-align:center}
+    .summary-table th{background:#f3f4f6}
+  </style>
 </head>
-
 <body>
-
-  <section id="screen-share" class="screen flex flex-col items-center justify-center gap-4 p-6">
-
-    <h1 class="text-2xl font-bold mb-2">リアルタイム共有</h1>
-
-    <div class="w-full max-w-sm text-center">
-
-      <p class="text-sm text-gray-600 mb-2">
-
-        他の人とタイマーを共有するには、同じ「合言葉」を入力してください。
-
-      </p>
-
-      <input id="share-passcode" type="text" placeholder="合言葉" class="w-full p-3 border rounded-md text-lg text-center">
-
-      <button id="share-connect-btn" class="w-full mt-3 py-3 text-xl font-bold text-white bg-teal-500 rounded-lg shadow-lg">接続</button>
-
-      <hr class="my-4">
-
-      <button id="share-standalone-btn" class="w-full py-2 text-lg font-bold text-gray-700 bg-gray-200 rounded-lg">一人で使う</button>
-
-    </div>
-
-  </section>
-
- 
-
-  <!-- モード選択画面 -->
-
-  <section id="screen-chooser" class="screen flex flex-col items-center justify-center gap-5 p-6">
-
-    <h1 class="text-2xl font-bold mb-2">モードを選択</h1>
-
-    <div class="grid grid-cols-1 gap-3 w-full max-w-sm">
-
-      <div class="grid grid-cols-3 gap-2">
-
-        <button id="choose-split" class="col-span-2 py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">ペース走</button>
-
-        <button id="help-split" class="py-2 text-sm font-bold text-indigo-700 bg-indigo-50 rounded-xl border border-indigo-200">説明</button>
-
-      </div>
-
-      <div class="grid grid-cols-3 gap-2">
-
-        <button id="choose-pm" class="col-span-2 py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">インターバル</button>
-
-        <button id="help-pm" class="py-2 text-sm font-bold text-green-700 bg-green-50 rounded-xl border border-green-200">説明</button>
-
-      </div>
-
-      <div class="grid grid-cols-3 gap-2">
-
-        <button id="choose-custom" class="col-span-2 py-4 text-xl font-bold text-white bg-gray-800 rounded-xl shadow">タイマー</button>
-
-        <button id="help-custom" class="py-2 text-sm font-bold text-gray-700 bg-gray-50 rounded-xl border border-gray-200">説明</button>
-
-      </div>
-
-    </div>
-
-  </section>
-
-
-
-  <!-- 戻るボタン（モード時のみ表示） -->
-
-  <div id="back" class="back-btn hidden">
-
-    <button class="bg-white shadow text-xl" aria-label="戻る">←</button>
-
-  </div>
-
-
-
-  <!-- Split -->
-
-  <section id="screen-split" class="screen hidden">
-
-    <div class="split-wrap">
-
-      <div id="split-grid" class="split-grid"></div>
-
-      <div id="split-master" class="split-master">
-
-        <div id="share-controls" class="hidden w-full flex flex-col items-center text-xs px-2">
-
-          <div id="share-status" class="mb-1">接続中...</div>
-
-          <div class="w-full grid grid-cols-2 gap-2">
-
-            <button id="share-ready-btn-1" class="w-full py-1 border-2 border-gray-400 rounded">ユーザー1: 準備中</button>
-
-            <button id="share-ready-btn-2" class="w-full py-1 border-2 border-gray-400 rounded">ユーザー2: 準備中</button>
-
-          </div>
-
-        </div>
-
-        <div id="standalone-controls" class="flex gap-8 items-center justify-center">
-
-            <button data-action="add" class="w-12 h-12 rounded-full bg-blue-500 text-white text-2xl">+</button>
-
-            <button data-action="remove" class="w-12 h-12 rounded-full bg-gray-500 text-white text-2xl">−</button>
-
-            <button data-action="start-all" class="btn px-4 bg-green-500 rounded font-bold">START ALL</button>
-
-            <button data-action="stop-all"  class="btn px-4 bg-red-500 rounded font-bold">STOP ALL</button>
-
-            <button data-action="reset-all" class="btn px-4 bg-orange-500 rounded font-bold">RESET & REVIEW</button>
-
-        </div>
-
-      </div>
-
-    </div>
-
-  </section>
-
-
-
-  <!-- Pacemaker -->
-
-  <section id="screen-pm" class="screen hidden">
-
-    <div id="pm-settings" class="p-4 space-y-3">
-
-      <h2 class="text-xl font-bold text-center">インターバル設定</h2>
-
-      <div class="grid grid-cols-2 gap-3">
-
-        <input id="pm-distance" type="number" placeholder="距離(m)" class="p-2 border rounded-md text-lg">
-
-        <input id="pm-lap-distance" type="number" placeholder="ラップ距離(m)" value="400" class="p-2 border rounded-md text-lg">
-
-        <input id="pm-reps" type="number" placeholder="本数" class="p-2 border rounded-md text-lg">
-
-        <div>
-
-          <button id="pm-lane-minus" class="px-3 py-2 border rounded-l-md">-</button>
-
-          <span id="pm-lane-count" class="px-4 py-2 border-t border-b">1レーン</span>
-
-          <button id="pm-lane-plus" class="px-3 py-2 border rounded-r-md">+</button>
-
-        </div>
-
-        <div class="col-span-2 flex items-center gap-2">
-
-          <input id="pm-rest-dist" type="number" placeholder="レスト距離(m)" class="p-2 border rounded-md text-lg w-full">
-
-          <input type="checkbox" id="pm-return-to-start" class="h-5 w-5 ml-2"><label for="pm-return-to-start">開始点へ</label>
-
-        </div>
-
-      </div>
-
-      <div id="pm-lane-targets" class="space-y-2"></div>
-
-      <button id="pm-start-btn" class="w-full mt-1 py-3 text-2xl font-bold text-white bg-green-500 rounded-lg shadow-lg">練習開始</button>
-
-    </div>
-
-    <div id="pm-runner" class="hidden h-full">
-
-      <div id="pm-runner-grid" class="pm-grid"></div>
-
-    </div>
-
-  </section>
-
-
-
-  <!-- Custom Timer -->
-
-  <section id="screen-custom" class="screen hidden">
-
-    <div id="custom-settings" class="p-4">
-
-      <h2 class="text-xl font-bold text-center mb-4">タイマー設定</h2>
-
-      <div id="custom-steps-container" class="space-y-2"></div>
-
-      <button id="custom-add-step-btn" class="w-full mt-4 py-2 text-lg text-indigo-600 border-2 border-indigo-600 rounded-lg">ステップを追加</button>
-
-      <div class="mt-4">
-
-        <label for="custom-reps" class="font-bold">セット数:</label>
-
-        <input id="custom-reps" type="number" value="1" class="w-full p-2 border rounded-md text-lg mt-1">
-
-      </div>
-
-      <button id="custom-start-btn" class="w-full mt-4 py-3 text-2xl font-bold text-white bg-green-500 rounded-lg shadow-lg">START</button>
-
-    </div>
-
-    <div id="custom-runner" class="hidden h-full flex flex-col justify-between items-center text-center p-4 custom-runner">
-
-      <div>
-
-        <div id="custom-runner-set-info" class="text-3xl font-bold">SET 1 / 1</div>
-
-        <div id="custom-runner-step-info" class="text-2xl">WORK 1 / 2</div>
-
-      </div>
-
-      <div id="custom-runner-time" class="text-9xl font-extrabold timer-font">00:30</div>
-
-      <div class="w-full"><button id="custom-reset-btn" class="w-full py-4 text-2xl font-bold text-gray-700 bg-gray-200 rounded-lg">RESET</button></div>
-
-    </div>
-
-  </section>
-
-
-
-  <!-- Summary Modal -->
-
-  <div id="summary" class="summary-modal hidden">
-
-    <div class="summary-content">
-
-      <h2 id="summary-title" class="text-2xl font-bold text-center">練習結果</h2>
-
-      <div id="summary-table"></div>
-
-      <div class="flex gap-4 mt-6">
-
-        <button id="summary-csv" class="w-full py-3 text-lg font-bold text-white bg-green-600 rounded-lg">CSVダウンロード</button>
-
-        <button id="summary-close" class="w-full py-3 text-lg font-bold text-gray-700 bg-gray-200 rounded-lg">閉じる</button>
-
-      </div>
-
-    </div>
-
-  </div>
-
-
-
-  <!-- Help Modal -->
-
-  <div id="help" class="help-modal hidden">
-
-    <div class="help-content">
-
-      <div class="flex items-center justify-between">
-
-        <h2 id="help-title" class="text-2xl font-bold">使い方</h2>
-
-        <button id="help-close" class="px-3 py-1 bg-gray-200 rounded">閉じる</button>
-
-      </div>
-
-      <div id="help-body" class="mt-3 text-sm leading-relaxed"></div>
-
-    </div>
-
-  </div>
-
-
-
-  <script>
-
-  document.addEventListener('DOMContentLoaded', () => {
-
-    /* ==================================
-
-     * Firebase & 共有設定
-
-     * ================================== */
-
-    // ▼▼▼ あなた自身のFirebase設定情報をここに貼り付けてください ▼▼▼
-
-    const firebaseConfig = {
-
-      apiKey: "AIzaSyBNp2KN5z3ztejZB_-ZOcU8GdgsqNryyVg",
-
-      authDomain: "ltimer-5959a.firebaseapp.com",
-
-      databaseURL: "https://ltimer-5959a-default-rtdb.firebaseio.com",
-
-      projectId: "ltimer-5959a",
-
-      storageBucket: "ltimer-5959a.firebasestorage.app",
-
-      messagingSenderId: "1092398779393",
-
-      appId: "1:1092398779393:web:7f78c518df7fd08370c400",
-
-      measurementId: "G-T9PTZJ1B92"
-
-    };
-
-    // ▲▲▲ ここまで ▲▲▲
-
-  
-
-    let firebaseApp;
-
-    let database;
-
-    try {
-
-      firebaseApp = firebase.initializeApp(firebaseConfig);
-
-      database = firebase.database();
-
-    } catch (e) {
-
-      console.error("Firebaseの初期化に失敗。設定が正しいか確認してください。");
-
-    }
-
-  
-
-    let sessionRef = null;
-
-    let watches = [];
-
-    let userId = null;
-
-    let sessionPasscode = '';
-
-    const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000; // 3時間
-
-  
-
-    /* ==================================
-
-     * 画面要素の取得
-
-     * ================================== */
-
-    const screens = {
-
-      share:   document.getElementById('screen-share'),
-
-      chooser: document.getElementById('screen-chooser'),
-
-      split:   document.getElementById('screen-split'),
-
-      pm:      document.getElementById('screen-pm'),
-
-      custom:  document.getElementById('screen-custom'),
-
-    };
-
-    const backWrap = document.getElementById('back');
-
-    let currentScreen = 'share';
-
-  
-
-    const shareControls = document.getElementById('share-controls');
-
-    const standaloneControls = document.getElementById('standalone-controls');
-
-    const shareStatus = document.getElementById('share-status');
-
-    const readyBtn1 = document.getElementById('share-ready-btn-1');
-
-    const readyBtn2 = document.getElementById('share-ready-btn-2');
-
-  
-
-    /* ==================================
-
-     * 画面遷移ロジック
-
-     * ================================== */
-
-    function showScreen(screenName) {
-
-      Object.values(screens).forEach(el => { if(el) el.classList.add('hidden'); });
-
-      if (screens[screenName]) {
-
-        screens[screenName].classList.remove('hidden');
-
-        currentScreen = screenName;
-
-      }
-
-      backWrap.classList.toggle('hidden', ['share', 'chooser'].includes(screenName));
-
-      if (screenName === 'split') recalibrateSplitLayout();
-
-    }
-
-    showScreen('share');
-
-  
-
-    /* ==================================
-
-     * 共有モード接続処理（有効期限機能付き）
-
-     * ================================== */
-
-    document.getElementById('share-connect-btn').onclick = () => {
-
-      sessionPasscode = document.getElementById('share-passcode').value.trim();
-
-      if (!sessionPasscode) return alert('合言葉を入力してください');
-
-      connectToSession();
-
-    };
-
-  
-
-    document.getElementById('share-standalone-btn').onclick = () => {
-
-      sessionRef = null;
-
-      showScreen('chooser');
-
-    };
-
-  
-
-    function connectToSession() {
-
-      if (!database) return alert("共有機能の初期化に失敗しました。");
-
-      sessionRef = database.ref('sessions/' + sessionPasscode);
-
-      
-
-      sessionRef.once('value', snapshot => {
-
-          const sessionData = snapshot.val();
-
-          const now = Date.now();
-
-  
-
-          if (sessionData && sessionData.createdAt && (now - sessionData.createdAt > SESSION_EXPIRATION_MS)) {
-
-              sessionRef.remove().then(() => {
-
-                  console.log("古いセッションを削除しました:", sessionPasscode);
-
-                  joinSession(true); // 新規セッションとして参加
-
-              });
-
-          } else {
-
-              joinSession(sessionData === null); // データがなければ新規
-
-          }
-
-      });
-
-    }
-
-  
-
-    function joinSession(isNewSession) {
-
-      sessionRef.child('users').transaction(currentUsers => {
-
-        currentUsers = currentUsers || {};
-
-        if (!currentUsers.user1) {
-
-          userId = 'user1';
-
-          currentUsers.user1 = { connected: true, ready: false };
-
-        } else if (!currentUsers.user2) {
-
-          userId = 'user2';
-
-          currentUsers.user2 = { connected: true, ready: false };
-
-        } else { return; }
-
-        return currentUsers;
-
-      }).then(result => {
-
-        if (!result.committed || !userId) {
-
-          alert('このセッションは満員です。');
-
-          sessionRef = null;
-
-          return;
-
-        }
-
-        if (isNewSession && userId === 'user1') {
-
-          sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
-
-        }
-
-        
-
-        const myUserRef = sessionRef.child('users').child(userId);
-
-        myUserRef.onDisconnect().update({ connected: false, ready: false });
-
-  
-
-        listenToSessionChanges();
-
-        showScreen('chooser');
-
-      });
-
-    }
-
-  
-
-    /* ==================================
-
-     * Firebaseデータ監視・書き込み
-
-     * ================================== */
-
-    function listenToSessionChanges() {
-
-      sessionRef.on('value', (snapshot) => {
-
-        if (!snapshot.exists()) return;
-
-        const sessionData = snapshot.val();
-
-        updateUsersStatusUI(sessionData.users);
-
-        const newWatches = sessionData.watches || [];
-
-        if (JSON.stringify(watches) !== JSON.stringify(newWatches)) {
-
-          watches = newWatches;
-
-          if(currentScreen === 'split') renderSplit();
-
-        }
-
-      });
-
-    }
-
-  
-
-    function updateUsersStatusUI(users) { /* ... 前回のコードと同じ ... */ }
-
-    function syncWatchesToFirebase() { if (sessionRef) sessionRef.child('watches').set(watches); }
-
-  
-
-    readyBtn1.onclick = () => { if(userId === 'user1') toggleReady(); };
-
-    readyBtn2.onclick = () => { if(userId === 'user2') toggleReady(); };
-
-    function toggleReady() {
-
-      if (!sessionRef || !userId) return;
-
-      const myReadyRef = sessionRef.child('users').child(userId).child('ready');
-
-      myReadyRef.once('value', snapshot => { myReadyRef.set(!snapshot.val()); });
-
-    }
-
-    
-
-    /* ==================================
-
-     * ここから下はアプリの基本機能
-
-     * ================================== */
-
-    document.getElementById('choose-split').onclick = () => {
-
-      if (sessionRef) {
-
-        shareControls.classList.remove('hidden');
-
-        standaloneControls.classList.add('hidden');
-
-        initSplit(true);
-
-      } else {
-
-        shareControls.classList.add('hidden');
-
-        standaloneControls.classList.remove('hidden');
-
-        initSplit(false);
-
-      }
-
-      showScreen('split');
-
-    };
-
-    document.getElementById('choose-pm').onclick = () => { initPacemaker(); showScreen('pm'); };
-
-    document.getElementById('choose-custom').onclick = () => { initCustom(); showScreen('custom'); };
-
-    backWrap.querySelector('button').onclick = () => {
-
-        if(sessionRef && userId) {
-
-            sessionRef.child('users').child(userId).update({ connected: false, ready: false });
-
-            sessionRef.off(); sessionRef = null; userId = null;
-
-        }
-
-        showScreen('chooser');
-
-    };
-
-    
-
-    /* ====== Split Mode ====== */
-
-    let rafId;
-
-    const splitGrid = document.getElementById('split-grid');
-
-    
-
-    function initSplit(isShared) {
-
-      if(isShared) {
-
-          if(userId === 'user1') {
-
-              sessionRef.child('watches').once('value', snapshot => {
-
-                  if(!snapshot.exists()){ // 誰も時計を作っていなければ初期化
-
-                      watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
-
-                      syncWatchesToFirebase();
-
-                  }
-
-              });
-
-          }
-
-      } else {
-
-          watches=[{id:0,name:'時計 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
-
-      }
-
-      renderSplit();
-
-    }
-
-  
-
-    function renderSplit(){
-
-      splitGrid.innerHTML = watches.map(sw=>{
-
-        let cum=0; const hist = (sw.laps || []).map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
-
-          .map(h=>`<div class="hist-line"><span class="hist-n">${h.n}</span> ${fmt(h.lap)} <span class="hist-cum">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
-
-        return `<div class="split-card relative" id="w-${sw.id}">
-
-          <button data-id="${sw.id}" data-action="delete" class="absolute top-2 right-2 w-6 h-6 bg-gray-300 text-gray-700 rounded-full flex items-center justify-center text-lg font-bold hover:bg-red-500 hover:text-white">×</button>
-
-          <div class="split-card-header">
-
-            <input type="text" value="${sw.name}" data-id="${sw.id}" class="split-name-input p-1 bg-gray-100 rounded font-bold">
-
-            <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${(sw.target||0)>0?sw.target:''}" class="target-lap-input border-2 rounded">
-
-          </div>
-
-          <div class="split-main-time timer-font text-gray-900">${fmt(sw.elapsed)}</div>
-
-          <div class="split-lap-live timer-font" id="live-${sw.id}">${fmt(sw.elapsed - sw.lastLap)}</div>
-
-          <div class="split-lap-history">${hist}</div>
-
-          <div class="split-actions">
-
-            <button data-id="${sw.id}" data-action="start" class="btn-start text-white font-bold rounded ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
-
-            <button data-id="${sw.id}" data-action="lap" class="btn-lap text-white font-bold rounded bg-gray-700">LAP (${(sw.laps||[]).length+1})</button>
-
-          </div>
-
-        </div>`; }).join('');
-
-      recalibrateSplitLayout();
-
-      wireSplit();
-
-    }
-
-  
-
-    function wireSplit() {
-
-      // 削除ボタン
-
-      splitGrid.querySelectorAll('button[data-action="delete"]').forEach(btn => {
-
-          btn.onclick = (e) => {
-
-              if (watches.length <= 1) return; // 最後の1つは消せない
-
-              const idToDelete = +e.currentTarget.dataset.id;
-
-              watches = watches.filter(w => w.id !== idToDelete);
-
-              if(sessionRef) syncWatchesToFirebase(); else renderSplit();
-
-          };
-
-      });
-
-      // 入力
-
-      splitGrid.querySelectorAll('input').forEach(el => {
-
-        el.onchange = (e) => { /* ... */ };
-
-      });
-
-      // START/LAPボタン
-
-      splitGrid.querySelectorAll('.split-actions button').forEach(btn => {
-
-        btn.onclick = (e) => {
-
-          const id = +e.currentTarget.dataset.id;
-
-          const action = e.currentTarget.dataset.action;
-
-          const sw = watches.find(w => w.id === id);
-
-          if (!sw) return;
-
-          if (action === 'start') {
-
-            sw.running = !sw.running;
-
-            if (sw.running) sw.start = Date.now() - sw.elapsed;
-
-          }
-
-          if (action === 'lap' && sw.running) {
-
-            sw.laps = sw.laps || [];
-
-            const lap = sw.elapsed - sw.lastLap;
-
-            sw.laps.push(lap);
-
-            sw.lastLap = sw.elapsed;
-
-          }
-
-          if(sessionRef) syncWatchesToFirebase(); else renderSplit();
-
-        }
-
-      });
-
-      // マスターコントロール
-
-      standaloneControls.querySelectorAll('button').forEach(b => {
-
-        b.onclick = (e) => {
-
-          const action = e.currentTarget.dataset.action;
-
-          if (action === 'add' && watches.length < 6) { 
-
-              const newId = (watches.length > 0) ? Math.max(...watches.map(w => w.id)) + 1 : 0;
-
-              watches.push({id:newId, name:`時計 ${newId+1}`, running:false, start:0, elapsed:0, lastLap:0, laps:[], target:0});
-
-          }
-
-          if (action === 'start-all') { watches.forEach(w => { if(!w.running){ w.running = true; w.start = Date.now() - w.elapsed; }}); }
-
-          if (action === 'stop-all') { watches.forEach(w => w.running = false); }
-
-          if (action === 'reset-all' && !watches.some(w=>w.running)) { initSplit(false); }
-
-          renderSplit();
-
-        }
-
-      });
-
-    }
-
-  
-
-    function tickSplit() {
-
-      const now = Date.now();
-
-      let needsSync = false;
-
-      watches.forEach(sw => { if (sw.running) sw.elapsed = now - sw.start; });
-
-  
-
-      // 共有モードではリーダー（ユーザー1）が定期的に同期する
-
-      if (sessionRef && userId === 'user1' && watches.some(w=>w.running)) {
-
-          syncWatchesToFirebase();
-
-      }
-
-      
-
-      // UI更新は全クライアントがローカルで行う
-
-      watches.forEach(sw => {
-
-          if (!sw.running) return;
-
-          const card = document.getElementById('w-' + sw.id);
-
-          if (!card) return;
-
-          card.querySelector('.split-main-time').textContent = fmt(sw.elapsed);
-
-          card.querySelector('.split-lap-live').textContent = fmt(sw.elapsed - sw.lastLap);
-
-      });
-
-    }
-
-  
-
-    /* ====== RAF Loop ====== */
-
-    function loop() {
-
-      if (currentScreen === 'split') tickSplit();
-
-      requestAnimationFrame(loop);
-
-    }
-
-    
-
-    // 他のモードの関数定義や呼び出しはここに...
-
-    function recalibrateSplitLayout(){ /* ... */ }
-
-    function initPacemaker(){ /* ... */ }
-
-    function initCustom(){ /* ... */ }
-
-  
-
-    loop();
-
-  });
-
-  </script>
-
+  <section id="screen-share" class="screen flex flex-col items-center justify-center gap-4 p-6">
+    <h1 class="text-2xl font-bold mb-2">リアルタイム共有</h1>
+    <div class="w-full max-w-sm text-center">
+      <p class="text-sm text-gray-600 mb-2">
+        他の人とタイマーを共有するには、同じ「合言葉」を入力してください。
+      </p>
+      <input id="share-passcode" type="text" placeholder="合言葉" class="w-full p-3 border rounded-md text-lg text-center">
+      <button id="share-connect-btn" class="w-full mt-3 py-3 text-xl font-bold text-white bg-teal-500 rounded-lg shadow-lg">接続</button>
+      <hr class="my-4">
+      <button id="share-standalone-btn" class="w-full py-2 text-lg font-bold text-gray-700 bg-gray-200 rounded-lg">一人で使う</button>
+    </div>
+  </section>
+ 
+  <!-- モード選択画面 -->
+  <section id="screen-chooser" class="screen flex flex-col items-center justify-center gap-5 p-6">
+    <h1 class="text-2xl font-bold mb-2">モードを選択</h1>
+    <div class="grid grid-cols-1 gap-3 w-full max-w-sm">
+      <div class="grid grid-cols-3 gap-2">
+        <button id="choose-split" class="col-span-2 py-4 text-xl font-bold text-white bg-indigo-600 rounded-xl shadow">ペース走</button>
+        <button id="help-split" class="py-2 text-sm font-bold text-indigo-700 bg-indigo-50 rounded-xl border border-indigo-200">説明</button>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <button id="choose-pm" class="col-span-2 py-4 text-xl font-bold text-white bg-green-600 rounded-xl shadow">インターバル</button>
+        <button id="help-pm" class="py-2 text-sm font-bold text-green-700 bg-green-50 rounded-xl border border-green-200">説明</button>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <button id="choose-custom" class="col-span-2 py-4 text-xl font-bold text-white bg-gray-800 rounded-xl shadow">タイマー</button>
+        <button id="help-custom" class="py-2 text-sm font-bold text-gray-700 bg-gray-50 rounded-xl border border-gray-200">説明</button>
+      </div>
+    </div>
+  </section>
+  <!-- 戻るボタン（モード時のみ表示） -->
+  <div id="back" class="back-btn hidden">
+    <button class="bg-white shadow text-xl" aria-label="戻る">←</button>
+  </div>
+  <!-- Split -->
+  <section id="screen-split" class="screen hidden">
+    <div class="runner-wrap">
+      <div id="split-grid" class="runner-grid"></div>
+      <div id="split-master" class="split-master">
+        <div id="share-controls" class="hidden w-full flex flex-col items-center text-xs px-2">
+          <div id="share-status" class="mb-1">接続中...</div>
+          <div class="w-full grid grid-cols-2 gap-2">
+            <button id="share-ready-btn-1" class="w-full py-1 border-2 border-gray-400 rounded">ユーザー1: 準備中</button>
+            <button id="share-ready-btn-2" class="w-full py-1 border-2 border-gray-400 rounded">ユーザー2: 準備中</button>
+          </div>
+        </div>
+        <div id="standalone-controls" class="flex gap-8 items-center justify-center">
+            <button data-action="add" class="w-12 h-12 rounded-full bg-blue-500 text-white text-2xl">+</button>
+            <button data-action="remove" class="w-12 h-12 rounded-full bg-gray-500 text-white text-2xl">−</button>
+            <button data-action="start-all" class="btn px-4 bg-green-500 rounded font-bold">START ALL</button>
+            <button data-action="stop-all"  class="btn px-4 bg-red-500 rounded font-bold">STOP ALL</button>
+            <button data-action="review-reset" class="btn px-4 bg-orange-500 rounded font-bold">結果＆リセット</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- Pacemaker -->
+  <section id="screen-pm" class="screen hidden">
+    <div id="pm-settings" class="p-4 space-y-3 overflow-y-auto h-full">
+      <h2 class="text-xl font-bold text-center">インターバル設定</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <input id="pm-distance" type="number" placeholder="距離(m)/本" class="p-2 border rounded-md text-lg" value="1000">
+        <input id="pm-lap-distance" type="number" placeholder="トラック1周長 (m)" value="400" class="p-2 border rounded-md text-lg">
+        <input id="pm-reps" type="number" placeholder="本数" class="p-2 border rounded-md text-lg">
+        <div>
+          <button id="pm-lane-minus" class="px-3 py-2 border rounded-l-md">-</button>
+          <span id="pm-lane-count" class="px-4 py-2 border-t border-b">1レーン</span>
+          <button id="pm-lane-plus" class="px-3 py-2 border rounded-r-md">+</button>
+        </div>
+        <div class="col-span-2 flex items-center gap-2">
+          <input id="pm-rest-dist" type="number" placeholder="レスト距離(m)" class="p-2 border rounded-md text-lg w-full">
+        </div>
+      </div>
+      <div id="pm-lane-targets" class="space-y-2"></div>
+      <button id="pm-start-btn" class="w-full mt-1 py-3 text-2xl font-bold text-white bg-green-500 rounded-lg shadow-lg" disabled>練習開始</button>
+    </div>
+    <div id="pm-runner" class="hidden pm-runner-wrap">
+        <div id="pm-info-bar" class="bg-gray-800 text-white text-center p-2 text-lg font-bold leading-tight"></div>
+        <div id="pm-runner-grid" class="pm-grid"></div>
+    </div>
+  </section>
+  <!-- Custom Timer -->
+  <section id="screen-custom" class="screen hidden">
+    <div id="custom-settings" class="p-4">
+      <h2 class="text-xl font-bold text-center mb-4">タイマー設定</h2>
+      <div id="custom-steps-container" class="space-y-2"></div>
+      <button id="custom-add-step-btn" class="w-full mt-4 py-2 text-lg text-indigo-600 border-2 border-indigo-600 rounded-lg">ステップを追加</button>
+      <div class="mt-4">
+        <label for="custom-reps" class="font-bold">セット数:</label>
+        <input id="custom-reps" type="number" value="1" class="w-full p-2 border rounded-md text-lg mt-1">
+      </div>
+      <button id="custom-start-btn" class="w-full mt-4 py-3 text-2xl font-bold text-white bg-green-500 rounded-lg shadow-lg">START</button>
+    </div>
+    <div id="custom-runner" class="hidden h-full flex flex-col justify-between items-center text-center p-4 custom-runner">
+      <div>
+        <div id="custom-runner-set-info" class="text-3xl font-bold">SET 1 / 1</div>
+        <div id="custom-runner-step-info" class="text-2xl">WORK 1 / 2</div>
+      </div>
+      <div id="custom-runner-time" class="text-9xl font-extrabold timer-font">00:30</div>
+      <div class="w-full"><button id="custom-reset-btn" class="w-full py-4 text-2xl font-bold text-gray-700 bg-gray-200 rounded-lg">RESET</button></div>
+    </div>
+  </section>
+  <!-- Summary Modal -->
+  <div id="summary" class="summary-modal hidden">
+    <div class="summary-content">
+      <h2 id="summary-title" class="text-2xl font-bold text-center">練習結果</h2>
+      <div id="summary-table"></div>
+      <div class="flex gap-4 mt-6">
+        <button id="summary-csv" class="w-full py-3 text-lg font-bold text-white bg-green-600 rounded-lg">CSVダウンロード</button>
+        <button id="summary-close" class="w-full py-3 text-lg font-bold text-gray-700 bg-gray-200 rounded-lg">閉じる</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    /* ==================================
+     * ボタン効果（サウンドと視覚）
+     * ================================== */
+    let audioCtx;
+    function playClickSound() {
+        if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') return;
+        if (!audioCtx) {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch(e) { console.error("AudioContext could not be created.", e); return; }
+        }
+        if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(700, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.1);
+    }
+
+    function applyPressEffect(element) {
+        element.style.transition = 'transform 0.05s ease-in-out';
+        element.style.transform = 'scale(0.96)';
+        setTimeout(() => { element.style.transform = 'scale(1)'; }, 100);
+    }
+    
+    function handleButtonInteraction(e) {
+        if(e) e.stopPropagation();
+        const target = e ? e.currentTarget : this;
+        playClickSound();
+        applyPressEffect(target);
+    }
+    
+    /* ==================================
+     * ユーティリティ関数
+     * ================================== */
+    function fmt(ms) {
+      if (typeof ms !== 'number' || !isFinite(ms)) return '00:00.00';
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+      const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+      const milliseconds = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
+      return `${minutes}:${seconds}.${milliseconds}`;
+    }
+
+    function fmtCustom(s) {
+        if (typeof s !== 'number' || !isFinite(s)) return '00:00';
+        const totalSeconds = Math.ceil(s);
+        const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+        const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+        return `${minutes}:${seconds}`;
+    }
+
+    /* ==================================
+     * Firebase & 共有設定
+     * ================================== */
+    const firebaseConfig = {
+      apiKey: "AIzaSyBNp2KN5z3ztejZB_-ZOcU8GdgsqNryyVg",
+      authDomain: "ltimer-5959a.firebaseapp.com",
+      databaseURL: "https://ltimer-5959a-default-rtdb.firebaseio.com",
+      projectId: "ltimer-5959a",
+      storageBucket: "ltimer-5959a.firebasestorage.app",
+      messagingSenderId: "1092398779393",
+      appId: "1:1092398779393:web:7f78c518df7fd08370c400",
+      measurementId: "G-T9PTZJ1B92"
+    };
+ 
+    let firebaseApp, database;
+    try {
+      firebaseApp = firebase.initializeApp(firebaseConfig);
+      database = firebase.database();
+    } catch (e) { console.error("Firebaseの初期化に失敗。設定が正しいか確認してください。"); }
+ 
+    let sessionRef = null, watches = [], userId = null, sessionPasscode = '';
+    const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000; // 3時間
+ 
+    /* ==================================
+     * 画面要素の取得
+     * ================================== */
+    const screens = {
+      share: document.getElementById('screen-share'),
+      chooser: document.getElementById('screen-chooser'),
+      split: document.getElementById('screen-split'),
+      pm: document.getElementById('screen-pm'),
+      custom: document.getElementById('screen-custom'),
+    };
+    const backWrap = document.getElementById('back');
+    let currentScreen = 'share';
+ 
+    const shareControls = document.getElementById('share-controls');
+    const standaloneControls = document.getElementById('standalone-controls');
+ 
+    /* ==================================
+     * 画面遷移ロジック
+     * ================================== */
+    function showScreen(screenName) {
+      Object.values(screens).forEach(el => el.classList.add('hidden'));
+      screens[screenName].classList.remove('hidden');
+      currentScreen = screenName;
+      backWrap.classList.toggle('hidden', ['share', 'chooser'].includes(screenName));
+      if (screenName === 'chooser') updateChooserView();
+      if (screenName === 'split') recalibrateSplitLayout();
+    }
+    showScreen('share');
+ 
+    /* ==================================
+     * 共有モード接続処理
+     * ================================== */
+    document.getElementById('share-connect-btn').onclick = (e) => {
+      handleButtonInteraction(e);
+      sessionPasscode = document.getElementById('share-passcode').value.trim();
+      if (!sessionPasscode) return alert('合言葉を入力してください');
+      connectToSession();
+    };
+ 
+    document.getElementById('share-standalone-btn').onclick = (e) => {
+      handleButtonInteraction(e);
+      sessionRef = null;
+      userId = null;
+      showScreen('chooser');
+    };
+ 
+    function connectToSession() {
+      if (!database) return alert("共有機能の初期化に失敗しました。");
+      sessionRef = database.ref('sessions/' + sessionPasscode);
+      sessionRef.once('value', snapshot => {
+          const sessionData = snapshot.val();
+          const now = Date.now();
+          if (sessionData && sessionData.createdAt && (now - sessionData.createdAt > SESSION_EXPIRATION_MS)) {
+              sessionRef.remove().then(() => joinSession(true));
+          } else {
+              joinSession(sessionData === null);
+          }
+      });
+    }
+ 
+    function joinSession(isNewSession) {
+      sessionRef.child('users').transaction(currentUsers => {
+        currentUsers = currentUsers || {};
+        if (!currentUsers.user1) {
+          userId = 'user1';
+          currentUsers.user1 = { connected: true, ready: false };
+        } else if (!currentUsers.user2) {
+          userId = 'user2';
+          currentUsers.user2 = { connected: true, ready: false };
+        } else { return; }
+        return currentUsers;
+      }).then(result => {
+        if (!result.committed || !userId) {
+          alert('このセッションは満員です。');
+          sessionRef = null;
+          return;
+        }
+        if (isNewSession && userId === 'user1') {
+          sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
+        }
+        const myUserRef = sessionRef.child('users').child(userId);
+        myUserRef.onDisconnect().update({ connected: false, ready: false });
+        listenToSessionChanges();
+        showScreen('chooser');
+      });
+    }
+ 
+    function listenToSessionChanges() {
+      sessionRef.on('value', (snapshot) => {
+        if (!snapshot.exists()) return;
+        const sessionData = snapshot.val();
+        // updateUsersStatusUI(sessionData.users);
+        const newWatches = sessionData.watches || [];
+        if (JSON.stringify(watches) !== JSON.stringify(newWatches)) {
+          watches = newWatches;
+          if(currentScreen === 'split') renderSplit();
+        }
+      });
+    }
+ 
+    function syncWatchesToFirebase() { if (sessionRef) sessionRef.child('watches').set(watches); }
+ 
+    /* ==================================
+     * アプリ基本機能
+     * ================================== */
+    function updateChooserView() {
+        const isShared = !!sessionRef;
+        ['choose-pm', 'choose-custom'].forEach(id => {
+            const btn = document.getElementById(id);
+            btn.disabled = isShared;
+            btn.classList.toggle('bg-gray-400', isShared);
+            btn.classList.toggle('cursor-not-allowed', isShared);
+            btn.classList.toggle('opacity-50', isShared);
+            if(id === 'choose-pm') btn.classList.toggle('bg-green-600', !isShared);
+            if(id === 'choose-custom') btn.classList.toggle('bg-gray-800', !isShared);
+        });
+    }
+
+    document.getElementById('choose-split').onclick = (e) => { handleButtonInteraction(e); initSplit(!!sessionRef); showScreen('split'); };
+    document.getElementById('choose-pm').onclick = (e) => { if(!e.currentTarget.disabled) { handleButtonInteraction(e); initPacemaker(); showScreen('pm'); } };
+    document.getElementById('choose-custom').onclick = (e) => { if(!e.currentTarget.disabled) { handleButtonInteraction(e); initCustom(); showScreen('custom'); } };
+    
+    backWrap.querySelector('button').onclick = (e) => {
+        handleButtonInteraction(e);
+        stopCustomTimer();
+        if (pmState && pmState.running) pmState.running = false;
+        if(sessionRef && userId) {
+            sessionRef.child('users').child(userId).update({ connected: false, ready: false });
+            sessionRef.off(); sessionRef = null; userId = null;
+        }
+        showScreen('chooser');
+    };
+   
+    /* ====== Split Mode ====== */
+    const splitGrid = document.getElementById('split-grid');
+   
+    function initSplit(isShared) {
+      shareControls.classList.toggle('hidden', !isShared);
+      standaloneControls.classList.toggle('hidden', isShared);
+      watches = [{id:0,name:'タイマー 1',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+      renderSplit();
+    }
+ 
+    function renderSplit(){
+      splitGrid.innerHTML = watches.map(sw=>{
+        let cum=0; const hist = (sw.laps || []).map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
+          .map(h=>`<div class="hist-line"><span class="hist-n">${h.n}</span> ${fmt(h.lap)} <span class="hist-cum">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
+        return `<div class="runner-card" id="w-${sw.id}">
+          <button data-id="${sw.id}" data-action="delete" class="absolute top-2 right-2 w-6 h-6 bg-gray-300 text-gray-700 rounded-full flex items-center justify-center text-lg font-bold hover:bg-red-500 hover:text-white">×</button>
+          <div class="runner-card-header">
+            <input type="text" value="${sw.name}" data-id="${sw.id}" class="runner-name-input p-1 bg-gray-100 rounded font-bold">
+            <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${(sw.target||0)>0?sw.target:''}" class="target-lap-input border-2 rounded">
+          </div>
+          <div class="runner-main-time timer-font">${fmt(sw.elapsed)}</div>
+          <div class="runner-lap-live timer-font" id="live-${sw.id}">${fmt(sw.elapsed - sw.lastLap)}</div>
+          <div class="runner-lap-history">${hist}</div>
+          <div class="runner-actions">
+            <button data-id="${sw.id}" data-action="start" class="btn-start text-white font-bold rounded ${sw.running?'bg-red-500':'bg-green-500'}">${sw.running?'STOP':'START'}</button>
+            <button data-id="${sw.id}" data-action="lap" class="btn-lap text-white font-bold rounded bg-gray-700">LAP (${(sw.laps||[]).length+1})</button>
+          </div>
+        </div>`; }).join('');
+      recalibrateSplitLayout();
+      wireSplit();
+    }
+ 
+    function wireSplit() {
+      splitGrid.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+          btn.onclick = (e) => {
+              handleButtonInteraction(e);
+              if (watches.length <= 1 && !sessionRef) return;
+              watches = watches.filter(w => w.id !== +e.currentTarget.dataset.id);
+              if(sessionRef) syncWatchesToFirebase(); else renderSplit();
+          };
+      });
+      splitGrid.querySelectorAll('input').forEach(el => {
+        el.onchange = (e) => {
+            const sw = watches.find(w => w.id === +e.currentTarget.dataset.id);
+            if (!sw) return;
+            if (e.currentTarget.classList.contains('runner-name-input')) sw.name = e.currentTarget.value;
+            else if (e.currentTarget.classList.contains('target-lap-input')) sw.target = parseFloat(e.currentTarget.value) || 0;
+            if(sessionRef) syncWatchesToFirebase();
+        };
+      });
+      splitGrid.querySelectorAll('.runner-actions button').forEach(btn => {
+        btn.onclick = (e) => {
+          handleButtonInteraction(e);
+          const {id, action} = e.currentTarget.dataset;
+          const sw = watches.find(w => w.id === +id);
+          if (!sw) return;
+          if (action === 'start') {
+            sw.running = !sw.running;
+            if (sw.running) sw.start = Date.now() - sw.elapsed;
+            if(sessionRef) syncWatchesToFirebase(); else renderSplit();
+          } else if (action === 'lap' && sw.running) {
+            sw.laps = sw.laps || [];
+            const lapTime = sw.elapsed - sw.lastLap;
+            sw.laps.push(lapTime);
+            sw.lastLap = sw.elapsed;
+            if(sessionRef) syncWatchesToFirebase(); else renderSplit();
+            setTimeout(() => {
+                const liveEl = document.querySelector(`#w-${id} .runner-lap-live`);
+                if (liveEl) {
+                    liveEl.textContent = fmt(lapTime);
+                    liveEl.dataset.frozen = "true";
+                    setTimeout(() => { delete liveEl.dataset.frozen; }, 3000);
+                }
+            }, 50);
+          }
+        }
+      });
+      standaloneControls.querySelectorAll('button').forEach(b => {
+        b.onclick = (e) => {
+          handleButtonInteraction(e);
+          const {action} = e.currentTarget.dataset;
+          if (action === 'add' && watches.length < 6) { 
+              const newId = watches.length > 0 ? Math.max(...watches.map(w => w.id)) + 1 : 0;
+              watches.push({id:newId, name:`タイマー ${newId+1}`, running:false, start:0, elapsed:0, lastLap:0, laps:[], target:0});
+              renderSplit();
+          } else if (action === 'remove' && watches.length > 1) {
+              watches.pop();
+              renderSplit();
+          } else if (action === 'start-all') { 
+              watches.forEach(w => { if(!w.running){ w.running = true; w.start = Date.now() - w.elapsed; }}); 
+              renderSplit();
+          } else if (action === 'stop-all') { 
+              watches.forEach(w => w.running = false); 
+              renderSplit();
+          } else if (action === 'review-reset' && !watches.some(w=>w.running)) { 
+            if (watches.some(w => w.laps && w.laps.length > 0)) {
+                showSummary(watches, () => initSplit(false));
+            } else {
+                initSplit(false);
+            }
+          }
+        }
+      });
+    }
+ 
+    function tickSplit() {
+      const now = Date.now();
+      watches.forEach(sw => { if (sw.running) sw.elapsed = now - sw.start; });
+      if (sessionRef && userId === 'user1' && watches.some(w=>w.running)) syncWatchesToFirebase();
+      watches.forEach(sw => {
+          const card = document.getElementById('w-' + sw.id);
+          if (!card) return;
+          const liveEl = card.querySelector('.runner-lap-live');
+          if (sw.running) {
+             card.querySelector('.runner-main-time').textContent = fmt(sw.elapsed);
+             if (!liveEl.dataset.frozen) liveEl.textContent = fmt(sw.elapsed - sw.lastLap);
+          }
+          if (sw.target > 0 && sw.running) {
+              const diff = (sw.target * 1000) - (sw.elapsed - sw.lastLap);
+              card.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
+              if (diff < 0) card.classList.add('frame-bad');
+              else if (diff <= 5000) card.classList.add('frame-warn5');
+              else if (diff <= 10000) card.classList.add('frame-warn10');
+          } else {
+              card.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
+          }
+      });
+    }
+
+    /* ====== Pacemaker Mode ====== */
+    let pmState = {};
+    
+    function initPacemaker() {
+        pmState = { running: false };
+        document.getElementById('pm-settings').classList.remove('hidden');
+        document.getElementById('pm-runner').classList.add('hidden');
+        renderPmSettings();
+        wirePmSettings();
+        validatePmSettings();
+    }
+    
+    function renderPmSettings(laneCount = 1) {
+        const container = document.getElementById('pm-lane-targets');
+        const distance = document.getElementById('pm-distance').value || '本';
+        container.innerHTML = '';
+        document.getElementById('pm-lane-count').textContent = `${laneCount}レーン`;
+        for (let i = 1; i <= laneCount; i++) {
+            container.innerHTML += `
+                <div class="grid grid-cols-3 gap-2 items-center">
+                    <label class="font-bold text-sm whitespace-nowrap">レーン${i} (${distance}m目標):</label>
+                    <input type="number" data-lane="${i}" class="pm-target-min col-span-1 p-2 border rounded-md" placeholder="分">
+                    <input type="number" data-lane="${i}" class="pm-target-sec col-span-1 p-2 border rounded-md" placeholder="秒">
+                </div>`;
+        }
+    }
+
+    function wirePmSettings() {
+        const laneCountEl = document.getElementById('pm-lane-count');
+        document.getElementById('pm-settings').oninput = validatePmSettings;
+        const rerender = () => renderPmSettings(parseInt(laneCountEl.textContent));
+        document.getElementById('pm-distance').onchange = rerender;
+
+        document.getElementById('pm-lane-plus').onclick = (e) => {
+            handleButtonInteraction(e);
+            let count = parseInt(laneCountEl.textContent);
+            if (count < 4) renderPmSettings(count + 1);
+        };
+        document.getElementById('pm-lane-minus').onclick = (e) => {
+            handleButtonInteraction(e);
+            let count = parseInt(laneCountEl.textContent);
+            if (count > 1) renderPmSettings(count - 1);
+        };
+        document.getElementById('pm-start-btn').onclick = (e) => {
+            if (e.currentTarget.disabled) return;
+            handleButtonInteraction(e);
+            startPacemaker();
+        };
+    }
+
+    function validatePmSettings() {
+        const startBtn = document.getElementById('pm-start-btn');
+        const {value: distance} = document.getElementById('pm-distance');
+        const {value: lapDistance} = document.getElementById('pm-lap-distance');
+        const {value: reps} = document.getElementById('pm-reps');
+        const isValid = distance && lapDistance && reps;
+        startBtn.disabled = !isValid;
+        startBtn.classList.toggle('opacity-50', !isValid);
+        startBtn.classList.toggle('cursor-not-allowed', !isValid);
+    }
+
+    function generateLapSchedule(settings) {
+        const { W, N, R, L } = settings;
+        const W_arr = Array(N).fill(W);
+        const R_arr = Array(N - 1).fill(R);
+
+        const D_total = W_arr.reduce((a, b) => a + b, 0) + R_arr.reduce((a, b) => a + b, 0);
+        let currentPos = (-D_total % L + L) % L;
+
+        const schedule = [];
+        let totalDistance = 0;
+
+        for (let i = 0; i < N; i++) {
+            const rep = i + 1;
+            const repDist = W_arr[i];
+            
+            schedule.push({ rep, type: `START(${rep})`, distanceInRep: 0, totalDistance });
+
+            const k_max = Math.floor((currentPos + repDist) / L);
+            for (let k = 1; k <= k_max; k++) {
+                const passDist = (L - currentPos) + (k - 1) * L;
+                if (passDist > 0 && passDist < repDist) {
+                    schedule.push({ rep, type: `PASS(${passDist}m)`, distanceInRep: passDist, totalDistance: totalDistance + passDist });
+                }
+            }
+            
+            schedule.push({ rep, type: `FINISH(${rep})`, distanceInRep: repDist, totalDistance: totalDistance + repDist });
+            
+            currentPos = (currentPos + repDist) % L;
+            totalDistance += repDist;
+
+            if (i < N - 1) {
+                const restDist = R_arr[i];
+                currentPos = (currentPos + restDist) % L;
+                totalDistance += restDist;
+            }
+        }
+        
+        return schedule.filter((v, i, a) => a.findIndex(t => (t.totalDistance === v.totalDistance)) === i)
+                       .sort((a,b) => a.totalDistance - b.totalDistance);
+    }
+    
+    function startPacemaker() {
+        const settings = {
+            W: +document.getElementById('pm-distance').value,
+            L: +document.getElementById('pm-lap-distance').value,
+            N: +document.getElementById('pm-reps').value,
+            R: +document.getElementById('pm-rest-dist').value || 0,
+        };
+        const lanes = [];
+        for (let i = 1; i <= +document.getElementById('pm-lane-count').textContent[0]; i++) {
+            const min = +document.querySelector(`.pm-target-min[data-lane="${i}"]`).value || 0;
+            const sec = +document.querySelector(`.pm-target-sec[data-lane="${i}"]`).value || 0;
+            const targetTimePerRep = (min * 60 + sec) * 1000;
+            lanes.push({
+                id: i, name: `レーン ${i}`, targetTime: targetTimePerRep,
+                pace: targetTimePerRep > 0 ? targetTimePerRep / settings.W : 0,
+                laps: [], lastLapTime: 0, displayFrozen: false
+            });
+        }
+        pmState = {
+            running: false, paused: false, startTime: 0, repStartTime: 0, lapStartTime: 0,
+            nextLapIndex: 0, settings, lanes, lapSchedule: generateLapSchedule(settings)
+        };
+        renderPmRunner();
+        wirePmRunner();
+        document.getElementById('pm-settings').classList.add('hidden');
+        document.getElementById('pm-runner').classList.remove('hidden');
+        updatePmDisplays();
+    }
+
+    function renderPmRunner() {
+        const grid = document.getElementById('pm-runner-grid');
+        grid.innerHTML = pmState.lanes.map(lane => `
+            <div class="pm-lane" id="pm-lane-${lane.id}">
+                <p class="text-xl font-bold">${lane.name}</p>
+                <div class="pm-main-time timer-font">${fmt(0)}</div>
+                <div class="pm-lap-live timer-font">${fmt(0)}</div>
+                <div class="runner-lap-history" id="pm-history-${lane.id}">ラップ履歴</div>
+                <div class="flex flex-col justify-center items-center">
+                    <button class="pm-lap-btn bg-blue-500 text-white font-bold">START</button>
+                    <p class="text-sm text-gray-500 mt-1" id="pm-target-info-${lane.id}">次の目標: ---</p>
+                </div>
+            </div>`).join('');
+    }
+
+    function wirePmRunner() {
+        const handleLapPress = (e) => {
+            handleButtonInteraction(e);
+            const now = Date.now();
+            const eventIndex = pmState.nextLapIndex;
+            if (eventIndex >= pmState.lapSchedule.length) return;
+            const event = pmState.lapSchedule[eventIndex];
+            
+            if (event.type.startsWith('START')) {
+                pmState.running = true;
+                pmState.paused = false;
+                pmState.repStartTime = pmState.lapStartTime = now;
+                if (event.rep === 1) pmState.startTime = now;
+            }
+
+            const totalRepTime = now - pmState.repStartTime;
+            
+            pmState.lanes.forEach(lane => {
+                const prevEvent = eventIndex > 0 ? pmState.lapSchedule[eventIndex - 1] : {distanceInRep: 0, rep: event.rep};
+                const lastLapOfPrevRep = lane.laps.slice().reverse().find(l => l.event.rep === prevEvent.rep && l.event.distanceInRep === prevEvent.distanceInRep);
+                const prevRepTime = lastLapOfPrevRep ? lastLapOfPrevRep.totalRepTime : 0;
+                const lapTime = totalRepTime - prevRepTime;
+
+                lane.laps.push({ event, lapTime, totalRepTime, totalTime: now - pmState.startTime });
+                lane.lastLapTime = lapTime;
+                
+                if (!event.type.startsWith('START')) {
+                    lane.displayFrozen = true;
+                    setTimeout(() => { lane.displayFrozen = false; }, 3000);
+                }
+            });
+
+            if (event.type.startsWith('FINISH') && pmState.nextLapIndex < pmState.lapSchedule.length - 1) {
+                pmState.paused = true;
+            }
+
+            pmState.lapStartTime = now;
+            pmState.nextLapIndex++;
+            if (pmState.nextLapIndex >= pmState.lapSchedule.length) {
+                pmState.running = false;
+                pmState.paused = true;
+            }
+            
+            updatePmDisplays();
+        };
+        document.querySelectorAll('.pm-lap-btn').forEach(btn => btn.onclick = handleLapPress);
+    }
+
+    function updatePmDisplays() {
+        const nextEvent = pmState.lapSchedule[pmState.nextLapIndex];
+        let btnText = "START(1)";
+        let btnColorClass = 'bg-green-500';
+
+        if (pmState.nextLapIndex > 0) { // After first start
+            if (!pmState.running && pmState.paused) { // Finished
+                 btnText = "終了";
+                 btnColorClass = 'bg-orange-500';
+                 document.querySelectorAll('.pm-lap-btn').forEach(b => {
+                    b.onclick = (e) => {
+                        handleButtonInteraction(e);
+                        showPmSummary();
+                    };
+                    b.nextElementSibling.textContent = '練習終了';
+                 });
+            } else if (nextEvent) {
+                btnText = nextEvent.type;
+                if (btnText.startsWith('START')) {
+                    btnColorClass = 'bg-green-500';
+                } else if (btnText.startsWith('FINISH')) {
+                    btnColorClass = 'bg-red-500';
+                } else { // PASS
+                    btnColorClass = 'bg-gray-700';
+                }
+                
+                pmState.lanes.forEach(lane => {
+                    const targetInfoEl = document.getElementById(`pm-target-info-${lane.id}`);
+                    if (lane.pace > 0) {
+                        const targetCumulativeTime = nextEvent.distanceInRep * lane.pace;
+                        targetInfoEl.textContent = `目標: ${fmt(targetCumulativeTime)}`;
+                    } else {
+                        targetInfoEl.textContent = '目標: ---';
+                    }
+                });
+            }
+        }
+        document.querySelectorAll('.pm-lap-btn').forEach(b => {
+            b.textContent = btnText;
+            b.classList.remove('bg-blue-500', 'bg-green-500', 'bg-red-500', 'bg-gray-700', 'bg-orange-500');
+            b.classList.add(btnColorClass);
+        });
+
+        pmState.lanes.forEach(lane => {
+            const histEl = document.getElementById(`pm-history-${lane.id}`);
+            histEl.innerHTML = lane.laps.map(lap => {
+                if (lap.event.distanceInRep === 0 && lap.event.type.startsWith('START')) return '';
+                return `<div class="hist-line"><span class="font-bold">${lap.event.type}:</span> ${fmt(lap.lapTime)} <span class="text-gray-500">(${fmt(lap.totalRepTime)})</span></div>`;
+            }).reverse().join('');
+            histEl.scrollTop = 0;
+        });
+        
+        const currentEvent = pmState.lapSchedule[pmState.nextLapIndex - 1] || pmState.lapSchedule[0];
+        if(currentEvent) document.getElementById('pm-info-bar').textContent = `本数: ${currentEvent.rep} / ${pmState.settings.N}`;
+    }
+
+    function tickPacemaker() {
+        if (!pmState.running || pmState.paused) return;
+        const now = Date.now();
+        const repElapsed = now - pmState.repStartTime;
+        const lapElapsed = now - pmState.lapStartTime;
+        
+        const nextEvent = pmState.lapSchedule[pmState.nextLapIndex];
+
+        pmState.lanes.forEach(lane => {
+            const repTimeEl = document.querySelector(`#pm-lane-${lane.id} .pm-main-time`);
+            const lapTimeEl = document.querySelector(`#pm-lane-${lane.id} .pm-lap-live`);
+            const laneEl = document.getElementById(`pm-lane-${lane.id}`);
+            
+            if (lane.displayFrozen) {
+                lapTimeEl.textContent = fmt(lane.lastLapTime);
+            } else {
+                repTimeEl.textContent = fmt(repElapsed);
+                lapTimeEl.textContent = fmt(lapElapsed);
+
+                if (lane.pace > 0 && nextEvent) {
+                    const targetCumulativeTime = nextEvent.distanceInRep * lane.pace;
+                    const diff = targetCumulativeTime - repElapsed;
+
+                    laneEl.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
+                    if (diff < 0) {
+                        laneEl.classList.add('frame-bad');
+                    } else if (diff <= 5000) {
+                        laneEl.classList.add('frame-warn5');
+                    } else if (diff <= 10000) {
+                        laneEl.classList.add('frame-warn10');
+                    }
+                } else {
+                    laneEl.classList.remove('frame-warn10', 'frame-warn5', 'frame-bad');
+                }
+            }
+        });
+    }
+
+    /* ====== Custom Timer Mode ====== */
+    function stopCustomTimer(){} // dummy
+    function initCustom(){} // dummy
+
+    /* ====== Summary Modal ====== */
+    function showSummary(data, onCloseCallback) {
+        const summaryTableContainer = document.getElementById('summary-table');
+        const summaryModal = document.getElementById('summary');
+        let tableHtml = '<table class="summary-table">';
+        data.forEach(item => {
+            if (!item.laps || item.laps.length === 0) return;
+            tableHtml += `<thead><tr><th colspan="3">${item.name}</th></tr>`;
+            tableHtml += `<tr><th>Lap</th><th>Time</th><th>Cumulative</th></tr></thead><tbody>`;
+            let cum = 0;
+            item.laps.forEach((lap, i) => {
+                cum += lap;
+                tableHtml += `<tr><td>${i+1}</td><td>${fmt(lap)}</td><td>${fmt(cum)}</td></tr>`;
+            });
+            tableHtml += '</tbody>';
+        });
+        tableHtml += '</table>';
+        summaryTableContainer.innerHTML = tableHtml;
+        summaryModal.classList.remove('hidden');
+        document.getElementById('summary-close').onclick = () => {
+            summaryModal.classList.add('hidden');
+            if (onCloseCallback) onCloseCallback();
+        };
+    }
+    
+    function showPmSummary(){
+        const summaryTableContainer = document.getElementById('summary-table');
+        const summaryModal = document.getElementById('summary');
+        let tableHtml = '<table class="summary-table">';
+        pmState.lanes.forEach(lane => {
+             tableHtml += `<thead><tr><th colspan="4">${lane.name}</th></tr>`;
+             tableHtml += `<tr><th>Lap</th><th>Lap Time</th><th>Rep Time</th><th>Pace Diff</th></tr></thead><tbody>`;
+             lane.laps.forEach(lap => {
+                if(lap.event.type.startsWith('START') && lap.event.distanceInRep === 0) return;
+                let paceDiff = '---';
+                if(lane.pace > 0){
+                    const targetCumulativeTime = lap.event.distanceInRep * lane.pace;
+                    const diff = targetCumulativeTime - lap.totalRepTime;
+                    const diffSign = diff >= 0 ? '-' : '+';
+                    paceDiff = `${diffSign}${fmt(Math.abs(diff))}`;
+                }
+                tableHtml += `<tr><td>${lap.event.type}</td><td>${fmt(lap.lapTime)}</td><td>${fmt(lap.totalRepTime)}</td><td>${paceDiff}</td></tr>`;
+             });
+             tableHtml += `</tbody>`;
+        });
+        tableHtml += '</table>';
+        summaryTableContainer.innerHTML = tableHtml;
+        summaryModal.classList.remove('hidden');
+        document.getElementById('summary-close').onclick = () => {
+            summaryModal.classList.add('hidden');
+            initPacemaker();
+        };
+    }
+ 
+    /* ====== RAF Loop ====== */
+    function loop() {
+      if (currentScreen === 'split') tickSplit();
+      // if (currentScreen === 'custom') tickCustomTimer();
+      if (currentScreen === 'pm') tickPacemaker();
+      requestAnimationFrame(loop);
+    }
+   
+    function recalibrateSplitLayout(){
+        const grid = document.getElementById('split-grid');
+        if (!grid) return;
+        const count = watches.length;
+        
+        if (count <= 2) {
+            grid.style.gridTemplateColumns = '1fr';
+            grid.style.gridTemplateRows = `repeat(${count}, 1fr)`;
+        } else if (count <= 4) {
+            grid.style.gridTemplateColumns = '1fr 1fr';
+            grid.style.gridTemplateRows = `repeat(${Math.ceil(count / 2)}, 1fr)`;
+        } else { // 5 or 6
+            grid.style.gridTemplateColumns = '1fr 1fr';
+            grid.style.gridTemplateRows = '1fr 1fr 1fr';
+        }
+        
+        const root = document.documentElement;
+        if (count <= 2) {
+            root.style.setProperty('--font-main', 'clamp(28px, 8vw, 40px)');
+            root.style.setProperty('--font-live', 'clamp(22px, 6vw, 32px)');
+            root.style.setProperty('--btn-h', '56px');
+        } else if (count <= 4) {
+            root.style.setProperty('--font-main', 'clamp(24px, 6.5vw, 32px)');
+            root.style.setProperty('--font-live', 'clamp(20px, 5vw, 26px)');
+            root.style.setProperty('--btn-h', '48px');
+        } else { // 5 or 6
+            root.style.setProperty('--font-main', 'clamp(20px, 5vw, 26px)');
+            root.style.setProperty('--font-live', 'clamp(16px, 4vw, 22px)');
+            root.style.setProperty('--btn-h', '44px');
+        }
+    }
+ 
+    loop();
+  });
+  </script>
 </body>
-
 </html>
+
