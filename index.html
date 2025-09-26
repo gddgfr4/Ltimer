@@ -92,8 +92,7 @@
     </div>
   </section>
  
-  <!-- モード選択画面 -->
-  <section id="screen-chooser" class="screen flex flex-col items-center justify-center gap-5 p-6">
+  <section id="screen-chooser" class="screen hidden flex flex-col items-center justify-center gap-5 p-6">
     <h1 class="text-2xl font-bold mb-2">モードを選択</h1>
     <div class="grid grid-cols-1 gap-3 w-full max-w-sm">
       <div class="grid grid-cols-3 gap-2">
@@ -110,11 +109,9 @@
       </div>
     </div>
   </section>
-  <!-- 戻るボタン（モード時のみ表示） -->
   <div id="back" class="back-btn hidden">
     <button class="bg-white shadow text-xl" aria-label="戻る">←</button>
   </div>
-  <!-- Split -->
   <section id="screen-split" class="screen hidden">
     <div class="runner-wrap">
       <div id="split-grid" class="runner-grid"></div>
@@ -136,7 +133,6 @@
       </div>
     </div>
   </section>
-  <!-- Pacemaker -->
   <section id="screen-pm" class="screen hidden">
     <div id="pm-settings" class="p-4 space-y-3 overflow-y-auto h-full">
       <h2 class="text-xl font-bold text-center">インターバル設定</h2>
@@ -161,7 +157,6 @@
         <div id="pm-runner-grid" class="pm-grid"></div>
     </div>
   </section>
-  <!-- Custom Timer -->
   <section id="screen-custom" class="screen hidden">
     <div id="custom-settings" class="p-4">
       <h2 class="text-xl font-bold text-center mb-4">タイマー設定</h2>
@@ -182,7 +177,6 @@
       <div class="w-full"><button id="custom-reset-btn" class="w-full py-4 text-2xl font-bold text-gray-700 bg-gray-200 rounded-lg">RESET</button></div>
     </div>
   </section>
-  <!-- Summary Modal -->
   <div id="summary" class="summary-modal hidden">
     <div class="summary-content">
       <h2 id="summary-title" class="text-2xl font-bold text-center">練習結果</h2>
@@ -193,7 +187,6 @@
       </div>
     </div>
   </div>
-  <!-- Help Modal -->
   <div id="help" class="help-modal hidden">
     <div class="help-content">
       <div class="flex items-center justify-between">
@@ -282,22 +275,26 @@
       } else {
         firebaseApp = firebase.app();
       }
-      database = firebase.database(); // Ltimerの共有機能用
-      firestore = firebase.firestore(); // AthLogの日誌書き込み用
+      database = firebase.database();
+      firestore = firebase.firestore();
     } catch (e) { console.error("Firebaseの初期化に失敗。"); }
 
-    // URLからAthLogの情報を取得
     const urlParams = new URLSearchParams(window.location.search);
     athlogTeamId = urlParams.get('team');
     athlogMemberId = urlParams.get('member');
+    
+    if (athlogMemberId) {
+        const shareTitle = document.querySelector('#screen-share h1');
+        const shareDesc = document.querySelector('#screen-share .text-sm');
+        shareTitle.textContent = `こんにちは、${athlogMemberId}さん`;
+        shareDesc.textContent = 'タイマーを共有するには、相手と同じ「合言葉」を入力してください。';
+    }
 
-    // 日付を 'YYYY-MM-DD' 形式で取得するヘルパー関数
     function ymd(d){
       const date = new Date(d.getTime() - d.getTimezoneOffset()*60000);
       return date.toISOString().slice(0,10);
     }
     
-    // AthLogの日誌に結果を追記する関数
     async function writeToAthlogJournal(summaryText) {
         if (!firestore || !athlogTeamId || !athlogMemberId) {
             console.log("AthLog連携情報がないため、書き込みをスキップします。");
@@ -321,9 +318,8 @@
         }
     }
     let sessionRef = null, watches = [], userId = null, sessionPasscode = '';
-    const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000; // 3時間
+    const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000;
 
-    /* ▼▼▼ 変更点：showSummaryとshowPmSummaryに関数を呼び出す処理を追加 ▼▼▼ */
     function showSummary(data, onCloseCallback) {
         const summaryTableContainer = document.getElementById('summary-table');
         const summaryModal = document.getElementById('summary');
@@ -347,7 +343,6 @@
         summaryTableContainer.innerHTML = tableHtml;
         summaryModal.classList.remove('hidden');
         
-        // 変更点：ここで書き込み関数を呼び出す
         writeToAthlogJournal(summaryTextForAthlog.trim());
 
         document.getElementById('summary-close').onclick = () => {
@@ -384,7 +379,6 @@
         summaryTableContainer.innerHTML = tableHtml;
         summaryModal.classList.remove('hidden');
 
-        // 変更点：ここで書き込み関数を呼び出す
         writeToAthlogJournal(summaryTextForAthlog.trim());
 
         document.getElementById('summary-close').onclick = () => {
@@ -514,31 +508,37 @@
     }
  
     function joinSession(isNewSession) {
-      sessionRef.child('users').transaction(currentUsers => {
-        currentUsers = currentUsers || {};
-        if (!currentUsers.user1) {
-          userId = 'user1';
-          currentUsers.user1 = { connected: true, ready: false };
-        } else if (!currentUsers.user2) {
-          userId = 'user2';
-          currentUsers.user2 = { connected: true, ready: false };
-        } else { return; }
-        return currentUsers;
-      }).then(result => {
-        if (!result.committed || !userId) {
-          alert('このセッションは満員です。');
-          sessionRef = null;
-          return;
-        }
-        if (isNewSession && userId === 'user1') {
-          sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
-        }
-        const myUserRef = sessionRef.child('users').child(userId);
-        myUserRef.onDisconnect().update({ connected: false, ready: false });
-        listenToSessionChanges();
-        showScreen('split');
-        initSplit(true);
-      });
+        const myName = athlogMemberId || `ゲスト${String(Date.now()).slice(-4)}`;
+        sessionRef.child('users').transaction(currentUsers => {
+            currentUsers = currentUsers || {};
+            if (Object.values(currentUsers).some(u => u.name === myName)) {
+                return; 
+            }
+            if (!currentUsers.user1) {
+                userId = 'user1';
+                currentUsers.user1 = { connected: true, ready: false, name: myName };
+            } else if (!currentUsers.user2) {
+                userId = 'user2';
+                currentUsers.user2 = { connected: true, ready: false, name: myName };
+            } else {
+                return;
+            }
+            return currentUsers;
+        }).then(result => {
+            if (!result.committed || !userId) {
+                alert('このセッションは満員か、同じ名前のユーザーが既に存在します。');
+                sessionRef = null;
+                return;
+            }
+            if (isNewSession && userId === 'user1') {
+                sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
+            }
+            const myUserRef = sessionRef.child('users').child(userId);
+            myUserRef.onDisconnect().remove();
+            listenToSessionChanges();
+            showScreen('split');
+            initSplit(true);
+        });
     }
  
     function listenToSessionChanges() {
@@ -559,9 +559,11 @@
 
         const user1 = users.user1 || {};
         const user2 = users.user2 || {};
+        const user1Name = user1.name || 'ユーザー1';
+        const user2Name = user2.name || 'ユーザー2';
 
-        const updateBtn = (btn, user, userIdText) => {
-            btn.textContent = `${userIdText}: ${user.connected ? (user.ready ? '準備OK' : '準備中') : '未接続'}`;
+        const updateBtn = (btn, user, userName) => {
+            btn.textContent = `${userName}: ${user.connected ? (user.ready ? '準備OK' : '準備中') : '未接続'}`;
             btn.classList.remove('border-gray-400', 'border-green-500', 'border-red-500');
             if (!user.connected) {
                 btn.classList.add('border-red-500');
@@ -572,8 +574,8 @@
             }
         };
 
-        updateBtn(readyBtn1, user1, 'ユーザー1');
-        updateBtn(readyBtn2, user2, 'ユーザー2');
+        updateBtn(readyBtn1, user1, user1Name);
+        updateBtn(readyBtn2, user2, user2Name);
         
         const statusEl = document.getElementById('share-status');
         if (user1.connected && user2.connected) {
@@ -625,7 +627,7 @@
             });
         }
         if(sessionRef && userId) {
-            sessionRef.child('users').child(userId).update({ connected: false, ready: false });
+            sessionRef.child('users').child(userId).remove();
             sessionRef.off(); sessionRef = null; userId = null;
         }
         showScreen('chooser');
@@ -1216,59 +1218,8 @@
         runnerEl.classList.toggle('rest-bg', currentStep.type === 'REST');
     }
 
-    /* ====== Summary Modal ====== */
-    function showSummary(data, onCloseCallback) {
-        const summaryTableContainer = document.getElementById('summary-table');
-        const summaryModal = document.getElementById('summary');
-        let tableHtml = '<table class="summary-table">';
-        data.forEach(item => {
-            if (!item.laps || item.laps.length === 0) return;
-            tableHtml += `<thead><tr><th colspan="3">${item.name}</th></tr>`;
-            tableHtml += `<tr><th>Lap</th><th>Time</th><th>Cumulative</th></tr></thead><tbody>`;
-            let cum = 0;
-            item.laps.forEach((lap, i) => {
-                cum += lap;
-                tableHtml += `<tr><td>${i+1}</td><td>${fmt(lap)}</td><td>${fmt(cum)}</td></tr>`;
-            });
-            tableHtml += '</tbody>';
-        });
-        tableHtml += '</table>';
-        summaryTableContainer.innerHTML = tableHtml;
-        summaryModal.classList.remove('hidden');
-        document.getElementById('summary-close').onclick = () => {
-            summaryModal.classList.add('hidden');
-            if (onCloseCallback) onCloseCallback();
-        };
-    }
-    
-    function showPmSummary(){
-        const summaryTableContainer = document.getElementById('summary-table');
-        const summaryModal = document.getElementById('summary');
-        let tableHtml = '<table class="summary-table">';
-        pmState.lanes.forEach(lane => {
-             tableHtml += `<thead><tr><th colspan="4">${lane.name}</th></tr>`;
-             tableHtml += `<tr><th>Lap</th><th>Lap Time</th><th>Rep Time</th><th>Pace Diff</th></tr></thead><tbody>`;
-             lane.laps.forEach(lap => {
-                if(lap.event.type.startsWith('START') && lap.event.distanceInRep === 0) return;
-                let paceDiff = '---';
-                if(lane.pace > 0){
-                    const targetCumulativeTime = lap.event.distanceInRep * lane.pace;
-                    const diff = targetCumulativeTime - lap.totalRepTime;
-                    const diffSign = diff >= 0 ? '-' : '+';
-                    paceDiff = `${diffSign}${fmt(Math.abs(diff))}`;
-                }
-                tableHtml += `<tr><td>${lap.event.type}</td><td>${fmt(lap.lapTime)}</td><td>${fmt(lap.totalRepTime)}</td><td>${paceDiff}</td></tr>`;
-             });
-             tableHtml += `</tbody>`;
-        });
-        tableHtml += '</table>';
-        summaryTableContainer.innerHTML = tableHtml;
-        summaryModal.classList.remove('hidden');
-        document.getElementById('summary-close').onclick = () => {
-            summaryModal.classList.add('hidden');
-            initPacemaker();
-        };
-    }
+    /* ====== Summary Modal (old, to be removed) ====== */
+    // showSummary and showPmSummary are now defined at the top with Athlog integration.
  
     /* ====== RAF Loop ====== */
     function loop() {
@@ -1384,4 +1335,3 @@
   </script>
 </body>
 </html>
-
