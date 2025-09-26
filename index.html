@@ -205,7 +205,7 @@
   </div>
   
   <script>
-  document.addEventListener('DOMContentLoaded', async () => {
+  document.addEventListener('DOMContentLoaded', () => {
     /* ==================================
      * ボタン効果（サウンドと視覚）
      * ================================== */
@@ -290,19 +290,6 @@
     const urlParams = new URLSearchParams(window.location.search);
     athlogTeamId = urlParams.get('team');
     athlogMemberId = urlParams.get('member');
-
-    // チームメンバーのリストを取得する関数
-    async function fetchTeamMembers() {
-        if (!firestore || !athlogTeamId) return;
-        try {
-            const membersSnapshot = await firestore.collection('teams').doc(athlogTeamId).collection('members').get();
-            teamMembers = membersSnapshot.docs.map(doc => doc.id);
-        } catch (e) {
-            console.error("チームメンバーの取得に失敗しました:", e);
-        }
-    }
-    
-    await fetchTeamMembers();
     
     if (athlogMemberId) {
         const shareTitle = document.querySelector('#screen-share h1');
@@ -310,13 +297,26 @@
         shareTitle.textContent = `こんにちは、${athlogMemberId}さん`;
         shareDesc.textContent = 'タイマーを共有するには、相手と同じ「合言葉」を入力してください。';
     }
+    
+    async function fetchTeamMembers() {
+        if (!firestore || !athlogTeamId) {
+            teamMembers = [];
+            return;
+        }
+        try {
+            const membersSnapshot = await firestore.collection('teams').doc(athlogTeamId).collection('members').get();
+            teamMembers = membersSnapshot.docs.map(doc => doc.id).sort();
+        } catch (e) {
+            console.error("チームメンバーの取得に失敗しました:", e);
+            teamMembers = [];
+        }
+    }
 
     function ymd(d){
       const date = new Date(d.getTime() - d.getTimezoneOffset()*60000);
       return date.toISOString().slice(0,10);
     }
     
-    // 特定のメンバーの日誌に結果を追記する関数
     async function writeToAthlogJournalForMember(targetMemberId, summaryText) {
         if (!firestore || !athlogTeamId || !targetMemberId) {
             console.log("AthLog連携情報が不完全なため、書き込みをスキップします。", { team: athlogTeamId, member: targetMemberId });
@@ -337,22 +337,22 @@
             console.log(`AthLogの日誌（${today}）に${targetMemberId}の結果を保存しました。`);
         } catch (e) {
             console.error(`AthLog日誌（${targetMemberId}）への書き込みに失敗:`, e);
+            throw e; // エラーを呼び出し元に伝える
         }
     }
     let sessionRef = null, watches = [], userId = null, sessionPasscode = '';
     const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000;
 
-    // ペース走の結果を表示し、各メンバーの日誌に保存する
     async function showSummary(data, onCloseCallback) {
         const summaryTableContainer = document.getElementById('summary-table');
         const summaryModal = document.getElementById('summary');
         let tableHtml = '<table class="summary-table">';
         
-        let writePromises = [];
+        const writePromises = [];
 
         data.forEach(item => {
             if (!item.laps || item.laps.length === 0) return;
-            const memberToLog = item.name; // 'name' プロパティにメンバーIDが格納される
+            const memberToLog = item.name;
             const displayName = memberToLog || 'タイマー ' + item.id;
 
             tableHtml += `<thead><tr><th colspan="3">${displayName}</th></tr>`;
@@ -367,7 +367,6 @@
             });
             tableHtml += '</tbody>';
 
-            // 有効なメンバーが選択されている場合、書き込み処理を準備
             if (memberToLog && teamMembers.includes(memberToLog)) {
                  writePromises.push(writeToAthlogJournalForMember(memberToLog, summaryTextForAthlog.trim()));
             }
@@ -376,10 +375,13 @@
         summaryTableContainer.innerHTML = tableHtml;
         summaryModal.classList.remove('hidden');
         
-        // すべての書き込み処理を実行し、完了後にアラートを表示
         if (writePromises.length > 0) {
-            await Promise.all(writePromises);
-            alert(`選択されたメンバーのAthLog日誌に結果を保存しました。`);
+            try {
+                await Promise.all(writePromises);
+                alert(`${writePromises.length}件の記録をAthLog日誌に保存しました。`);
+            } catch (error) {
+                alert("日誌への一部またはすべての書き込みに失敗しました。コンソールで詳細を確認してください。");
+            }
         }
 
         document.getElementById('summary-close').onclick = () => {
@@ -388,7 +390,6 @@
         };
     }
     
-    // インターバルの結果を表示し、操作中のユーザーの日誌に保存する
     async function showPmSummary(){
         const summaryTableContainer = document.getElementById('summary-table');
         const summaryModal = document.getElementById('summary');
@@ -417,10 +418,13 @@
         summaryTableContainer.innerHTML = tableHtml;
         summaryModal.classList.remove('hidden');
 
-        // インターバルの結果は現在操作しているユーザーの日誌に保存
         if (athlogMemberId) {
-            await writeToAthlogJournalForMember(athlogMemberId, summaryTextForAthlog.trim());
-            alert(`あなたのAthLog日誌に結果を保存しました。`);
+            try {
+                await writeToAthlogJournalForMember(athlogMemberId, summaryTextForAthlog.trim());
+                alert(`あなたのAthLog日誌に結果を保存しました。`);
+            } catch(e) {
+                alert("日誌への書き込みに失敗しました。");
+            }
         }
 
         document.getElementById('summary-close').onclick = () => {
@@ -657,7 +661,12 @@
         });
     }
 
-    document.getElementById('choose-split').onclick = (e) => { handleButtonInteraction(e); initSplit(!!sessionRef); showScreen('split'); };
+    document.getElementById('choose-split').onclick = async (e) => {
+      handleButtonInteraction(e);
+      await fetchTeamMembers();
+      initSplit(!!sessionRef);
+      showScreen('split');
+    };
     document.getElementById('choose-pm').onclick = (e) => { if(!e.currentTarget.disabled) { handleButtonInteraction(e); initPacemaker(); showScreen('pm'); } };
     document.getElementById('choose-custom').onclick = (e) => { if(!e.currentTarget.disabled) { handleButtonInteraction(e); initCustom(); showScreen('custom'); } };
     
@@ -694,7 +703,8 @@
       shareControls.classList.toggle('hidden', !isShared);
       standaloneControls.classList.toggle('hidden', isShared && !userId);
       
-      const initialWatches = [{id:0,name:'',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+      const firstMemberName = (teamMembers && teamMembers.length > 0) ? teamMembers[0] : '';
+      const initialWatches = [{id:0,name:firstMemberName,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
 
       if (isShared) {
         sessionRef.child('watches').transaction(currentData => {
@@ -835,10 +845,14 @@
             } else if (action === 'review-reset' && !currentWatches.some(w=>w.running)) {
                 if (currentWatches.some(w => w.laps && w.laps.length > 0)) {
                     showSummary(currentWatches, () => {
-                        updateSharedWatches(() => [{id:0,name:'',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}]);
+                        updateSharedWatches(watches => {
+                           const firstMemberName = (teamMembers && teamMembers.length > 0) ? teamMembers[0] : '';
+                           return [{id:0,name:firstMemberName,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+                        });
                     });
                 } else {
-                   return [{id:0,name:'',running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
+                   const firstMemberName = (teamMembers && teamMembers.length > 0) ? teamMembers[0] : '';
+                   return [{id:0,name:firstMemberName,running:false,start:0,elapsed:0,lastLap:0,laps:[],target:0}];
                 }
             }
             return currentWatches;
@@ -1385,3 +1399,4 @@
   </script>
 </body>
 </html>
+
