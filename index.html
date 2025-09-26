@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>多機能トレーニングタイマー Pro — Mobile</title>
+  
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -265,25 +267,131 @@
      * Firebase & 共有設定
      * ================================== */
     const firebaseConfig = {
-      apiKey: "AIzaSyBNp2KN5z3ztejZB_-ZOcU8GdgsqNryyVg",
-      authDomain: "ltimer-5959a.firebaseapp.com",
-      databaseURL: "https://ltimer-5959a-default-rtdb.firebaseio.com",
-      projectId: "ltimer-5959a",
-      storageBucket: "ltimer-5959a.firebasestorage.app",
-      messagingSenderId: "1092398779393",
-      appId: "1:1092398779393:web:7f78c518df7fd08370c400",
-      measurementId: "G-T9PTZJ1B92"
+      apiKey: "AIzaSyA8oCOusnqZCSax9ZY3-n4KNt2AxEmvT-E",
+      authDomain: "athlog-126d2.firebaseapp.com",
+      projectId: "athlog-126d2",
+      storageBucket: "athlog-126d2.appspot.com",
+      messagingSenderId: "784178114661",
+      appId: "1:784178114661:web:d41103b0dad1187b85168c"
     };
  
-    let firebaseApp, database;
+    let firebaseApp, database, firestore, athlogTeamId, athlogMemberId;
     try {
-      firebaseApp = firebase.initializeApp(firebaseConfig);
-      database = firebase.database();
-    } catch (e) { console.error("Firebaseの初期化に失敗。設定が正しいか確認してください。"); }
- 
+      if (!firebase.apps.length) {
+        firebaseApp = firebase.initializeApp(firebaseConfig);
+      } else {
+        firebaseApp = firebase.app();
+      }
+      database = firebase.database(); // Ltimerの共有機能用
+      firestore = firebase.firestore(); // AthLogの日誌書き込み用
+    } catch (e) { console.error("Firebaseの初期化に失敗。"); }
+
+    // URLからAthLogの情報を取得
+    const urlParams = new URLSearchParams(window.location.search);
+    athlogTeamId = urlParams.get('team');
+    athlogMemberId = urlParams.get('member');
+
+    // 日付を 'YYYY-MM-DD' 形式で取得するヘルパー関数
+    function ymd(d){
+      const date = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+      return date.toISOString().slice(0,10);
+    }
+    
+    // AthLogの日誌に結果を追記する関数
+    async function writeToAthlogJournal(summaryText) {
+        if (!firestore || !athlogTeamId || !athlogMemberId) {
+            console.log("AthLog連携情報がないため、書き込みをスキップします。");
+            return;
+        }
+        const today = ymd(new Date());
+        const docRef = firestore.collection('teams').doc(athlogTeamId)
+                                .collection('members').doc(athlogMemberId)
+                                .collection('journal').doc(today);
+        try {
+            await firestore.runTransaction(async (tx) => {
+                const doc = await tx.get(docRef);
+                const currentFeel = doc.data()?.feel || '';
+                const newFeel = currentFeel ? `${currentFeel}\n\n${summaryText}` : summaryText;
+                tx.set(docRef, { feel: newFeel }, { merge: true });
+            });
+            alert(`AthLogの日誌（${today}）に結果を保存しました。`);
+        } catch (e) {
+            console.error("AthLog日誌への書き込みに失敗:", e);
+            alert("AthLog日誌への結果の保存に失敗しました。");
+        }
+    }
     let sessionRef = null, watches = [], userId = null, sessionPasscode = '';
     const SESSION_EXPIRATION_MS = 3 * 60 * 60 * 1000; // 3時間
- 
+
+    /* ▼▼▼ 変更点：showSummaryとshowPmSummaryに関数を呼び出す処理を追加 ▼▼▼ */
+    function showSummary(data, onCloseCallback) {
+        const summaryTableContainer = document.getElementById('summary-table');
+        const summaryModal = document.getElementById('summary');
+        let tableHtml = '<table class="summary-table">';
+        let summaryTextForAthlog = '【ペース走 結果】\n';
+
+        data.forEach(item => {
+            if (!item.laps || item.laps.length === 0) return;
+            tableHtml += `<thead><tr><th colspan="3">${item.name}</th></tr>`;
+            tableHtml += `<tr><th>Lap</th><th>Time</th><th>Cumulative</th></tr></thead><tbody>`;
+            summaryTextForAthlog += `${item.name}\n`;
+            let cum = 0;
+            item.laps.forEach((lap, i) => {
+                cum += lap;
+                tableHtml += `<tr><td>${i+1}</td><td>${fmt(lap)}</td><td>${fmt(cum)}</td></tr>`;
+                summaryTextForAthlog += `Lap ${i+1}: ${fmt(lap)} (${fmt(cum)})\n`;
+            });
+            tableHtml += '</tbody>';
+        });
+        tableHtml += '</table>';
+        summaryTableContainer.innerHTML = tableHtml;
+        summaryModal.classList.remove('hidden');
+        
+        // 変更点：ここで書き込み関数を呼び出す
+        writeToAthlogJournal(summaryTextForAthlog.trim());
+
+        document.getElementById('summary-close').onclick = () => {
+            summaryModal.classList.add('hidden');
+            if (onCloseCallback) onCloseCallback();
+        };
+    }
+    
+    function showPmSummary(){
+        const summaryTableContainer = document.getElementById('summary-table');
+        const summaryModal = document.getElementById('summary');
+        let tableHtml = '<table class="summary-table">';
+        let summaryTextForAthlog = '【インターバル 結果】\n';
+
+        pmState.lanes.forEach(lane => {
+             tableHtml += `<thead><tr><th colspan="4">${lane.name}</th></tr>`;
+             tableHtml += `<tr><th>Lap</th><th>Lap Time</th><th>Rep Time</th><th>Pace Diff</th></tr></thead><tbody>`;
+             summaryTextForAthlog += `${lane.name}\n`;
+             lane.laps.forEach(lap => {
+                if(lap.event.type.startsWith('START') && lap.event.distanceInRep === 0) return;
+                let paceDiff = '---';
+                if(lane.pace > 0){
+                    const targetCumulativeTime = lap.event.distanceInRep * lane.pace;
+                    const diff = targetCumulativeTime - lap.totalRepTime;
+                    const diffSign = diff >= 0 ? '-' : '+';
+                    paceDiff = `${diffSign}${fmt(Math.abs(diff))}`;
+                }
+                tableHtml += `<tr><td>${lap.event.type}</td><td>${fmt(lap.lapTime)}</td><td>${fmt(lap.totalRepTime)}</td><td>${paceDiff}</td></tr>`;
+                summaryTextForAthlog += `${lap.event.type}: ${fmt(lap.lapTime)} (${fmt(lap.totalRepTime)})\n`;
+             });
+             tableHtml += `</tbody>`;
+        });
+        tableHtml += '</table>';
+        summaryTableContainer.innerHTML = tableHtml;
+        summaryModal.classList.remove('hidden');
+
+        // 変更点：ここで書き込み関数を呼び出す
+        writeToAthlogJournal(summaryTextForAthlog.trim());
+
+        document.getElementById('summary-close').onclick = () => {
+            summaryModal.classList.add('hidden');
+            initPacemaker();
+        };
+    }
     /* ==================================
      * 画面要素の取得
      * ================================== */
