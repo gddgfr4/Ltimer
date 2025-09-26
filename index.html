@@ -394,12 +394,15 @@
         const summaryTableContainer = document.getElementById('summary-table');
         const summaryModal = document.getElementById('summary');
         let tableHtml = '<table class="summary-table">';
-        let summaryTextForAthlog = '【インターバル 結果】\n';
-
+        const writePromises = [];
+        
         pmState.lanes.forEach(lane => {
-             tableHtml += `<thead><tr><th colspan="4">${lane.name}</th></tr>`;
+             const memberToLog = lane.name;
+             const displayName = memberToLog || `レーン ${lane.id}`;
+             tableHtml += `<thead><tr><th colspan="4">${displayName}</th></tr>`;
              tableHtml += `<tr><th>Lap</th><th>Lap Time</th><th>Rep Time</th><th>Pace Diff</th></tr></thead><tbody>`;
-             summaryTextForAthlog += `${lane.name}\n`;
+             
+             let summaryTextForAthlog = `【インターバル 結果: ${displayName}】\n`;
              lane.laps.forEach(lap => {
                 if(lap.event.type.startsWith('START') && lap.event.distanceInRep === 0) return;
                 let paceDiff = '---';
@@ -413,17 +416,21 @@
                 summaryTextForAthlog += `${lap.event.type}: ${fmt(lap.lapTime)} (${fmt(lap.totalRepTime)})\n`;
              });
              tableHtml += `</tbody>`;
+
+             if (memberToLog && teamMembers.includes(memberToLog)) {
+                writePromises.push(writeToAthlogJournalForMember(memberToLog, summaryTextForAthlog.trim()));
+             }
         });
         tableHtml += '</table>';
         summaryTableContainer.innerHTML = tableHtml;
         summaryModal.classList.remove('hidden');
 
-        if (athlogMemberId) {
+        if (writePromises.length > 0) {
             try {
-                await writeToAthlogJournalForMember(athlogMemberId, summaryTextForAthlog.trim());
-                alert(`あなたのAthLog日誌に結果を保存しました。`);
+                await Promise.all(writePromises);
+                alert(`${writePromises.length}件の記録をAthLog日誌に保存しました。`);
             } catch(e) {
-                alert("日誌への書き込みに失敗しました。");
+                alert("日誌への一部またはすべての書き込みに失敗しました。");
             }
         }
 
@@ -667,7 +674,14 @@
       initSplit(!!sessionRef);
       showScreen('split');
     };
-    document.getElementById('choose-pm').onclick = (e) => { if(!e.currentTarget.disabled) { handleButtonInteraction(e); initPacemaker(); showScreen('pm'); } };
+    document.getElementById('choose-pm').onclick = async (e) => { 
+        if(!e.currentTarget.disabled) { 
+            handleButtonInteraction(e); 
+            await fetchTeamMembers();
+            initPacemaker(); 
+            showScreen('pm'); 
+        } 
+    };
     document.getElementById('choose-custom').onclick = (e) => { if(!e.currentTarget.disabled) { handleButtonInteraction(e); initCustom(); showScreen('custom'); } };
     
     backWrap.querySelector('button').onclick = (e) => {
@@ -905,13 +919,23 @@
     
     function renderPmSettings(laneCount = 1) {
         const container = document.getElementById('pm-lane-targets');
-        const distance = document.getElementById('pm-distance').value || '本';
         container.innerHTML = '';
         document.getElementById('pm-lane-count').textContent = `${laneCount}レーン`;
+
+        const memberOptions = (teamMembers || []).map(m => `<option value="${m}">${m}</option>`).join('');
+
         for (let i = 1; i <= laneCount; i++) {
+            const selectedMember = (teamMembers && teamMembers[i-1]) ? `selected` : '';
             container.innerHTML += `
                 <div class="grid grid-cols-4 gap-2 items-center">
-                    <input type="text" value="レーン ${i}" data-lane-id="${i}" class="pm-lane-name col-span-2 p-2 border rounded-md">
+                    ${(athlogTeamId && teamMembers.length > 0) ? `
+                      <select data-lane-id="${i}" class="pm-lane-name col-span-2 p-2 border rounded-md">
+                        <option value="">-- 選手を選択 --</option>
+                        ${(teamMembers || []).map((m, index) => `<option value="${m}" ${i - 1 === index ? 'selected' : ''}>${m}</option>`).join('')}
+                      </select>
+                    ` : `
+                      <input type="text" value="レーン ${i}" data-lane-id="${i}" class="pm-lane-name col-span-2 p-2 border rounded-md">
+                    `}
                     <input type="number" data-lane-id="${i}" class="pm-target-min col-span-1 p-2 border rounded-md" placeholder="分">
                     <input type="number" data-lane-id="${i}" class="pm-target-sec col-span-1 p-2 border rounded-md" placeholder="秒">
                 </div>`;
@@ -921,9 +945,7 @@
     function wirePmSettings() {
         const laneCountEl = document.getElementById('pm-lane-count');
         document.getElementById('pm-settings').oninput = validatePmSettings;
-        const rerender = () => renderPmSettings(parseInt(laneCountEl.textContent));
-        document.getElementById('pm-distance').onchange = rerender;
-
+        
         document.getElementById('pm-lane-plus').onclick = (e) => {
             handleButtonInteraction(e);
             let count = parseInt(laneCountEl.textContent);
@@ -1004,7 +1026,8 @@
         for (let i = 1; i <= +document.getElementById('pm-lane-count').textContent[0]; i++) {
             const min = +document.querySelector(`.pm-target-min[data-lane-id="${i}"]`).value || 0;
             const sec = +document.querySelector(`.pm-target-sec[data-lane-id="${i}"]`).value || 0;
-            const name = document.querySelector(`.pm-lane-name[data-lane-id="${i}"]`).value.trim() || `レーン ${i}`;
+            const nameEl = document.querySelector(`.pm-lane-name[data-lane-id="${i}"]`);
+            const name = nameEl.value.trim() || `レーン ${i}`;
             const targetTimePerRep = (min * 60 + sec) * 1000;
             lanes.push({
                 id: i, name: name, targetTime: targetTimePerRep,
