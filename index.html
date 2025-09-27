@@ -562,13 +562,29 @@
       });
     }
  
+    // ▼▼▼ この関数全体を置き換えてください ▼▼▼
     function joinSession(isNewSession) {
         const myName = athlogMemberId || `ゲスト${String(Date.now()).slice(-4)}`;
         sessionRef.child('users').transaction(currentUsers => {
             currentUsers = currentUsers || {};
-            if (Object.values(currentUsers).some(u => u.name === myName)) {
-                return; 
+
+            // 自分が既にセッションに存在するか確認（再接続ケース）
+            let existingUserKey = null;
+            for (const key in currentUsers) {
+                if (currentUsers[key].name === myName) {
+                    existingUserKey = key;
+                    break;
+                }
             }
+
+            if (existingUserKey) {
+                // 既に存在する場合、自分のIDを設定して接続状態を更新
+                userId = existingUserKey;
+                currentUsers[userId].connected = true;
+                return currentUsers;
+            }
+
+            // 新規参加の場合、空いているスロットを探す
             if (!currentUsers.user1) {
                 userId = 'user1';
                 currentUsers.user1 = { connected: true, ready: false, name: myName };
@@ -576,29 +592,31 @@
                 userId = 'user2';
                 currentUsers.user2 = { connected: true, ready: false, name: myName };
             } else {
-                return;
+                // セッションが満員の場合は中断
+                return; 
             }
             return currentUsers;
-        // joinSession 関数の中
-    }).then(result => {
-        if (!result.committed || !userId) {
-            alert('このセッションは満員か、同じ名前のユーザーが既に存在します。');
-            sessionRef = null;
-            return;
-        }
-        if (isNewSession && userId === 'user1') {
-            sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
-        }
-        const myUserRef = sessionRef.child('users').child(userId);
-        myUserRef.onDisconnect().remove();
-        listenToSessionChanges();
-        showScreen('split');
-        initSplit(true);
-    }).catch(error => { // ▼▼▼ このブロックを追加 ▼▼▼
-        console.error("Firebase Transaction Failed:", error);
-        alert("接続に失敗しました。データベースの権限設定を確認してください。\nエラー: " + error.message);
-    }); // ▲▲▲ ここまで ▲▲▲
+
+        }).then(result => {
+            if (!result.committed || !userId) {
+                alert('このセッションは満員です。');
+                sessionRef = null;
+                return;
+            }
+            if (isNewSession && userId === 'user1') {
+                sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
+            }
+            const myUserRef = sessionRef.child('users').child(userId);
+            myUserRef.onDisconnect().remove();
+            listenToSessionChanges();
+            showScreen('split');
+            initSplit(true);
+        }).catch(error => {
+            console.error("Firebase Transaction Failed:", error);
+            alert("接続に失敗しました。データベースの権限設定を確認してください。\nエラー: " + error.message);
+        });
     }
+    // ▲▲▲ ここまで ▲▲▲
  
     function listenToSessionChanges() {
       sessionRef.on('value', (snapshot) => {
