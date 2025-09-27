@@ -578,21 +578,25 @@
                 return;
             }
             return currentUsers;
-        }).then(result => {
-            if (!result.committed || !userId) {
-                alert('このセッションは満員か、同じ名前のユーザーが既に存在します。');
-                sessionRef = null;
-                return;
-            }
-            if (isNewSession && userId === 'user1') {
-                sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
-            }
-            const myUserRef = sessionRef.child('users').child(userId);
-            myUserRef.onDisconnect().remove();
-            listenToSessionChanges();
-            showScreen('split');
-            initSplit(true);
-        });
+        // joinSession 関数の中
+    }).then(result => {
+        if (!result.committed || !userId) {
+            alert('このセッションは満員か、同じ名前のユーザーが既に存在します。');
+            sessionRef = null;
+            return;
+        }
+        if (isNewSession && userId === 'user1') {
+            sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
+        }
+        const myUserRef = sessionRef.child('users').child(userId);
+        myUserRef.onDisconnect().remove();
+        listenToSessionChanges();
+        showScreen('split');
+        initSplit(true);
+    }).catch(error => { // ▼▼▼ このブロックを追加 ▼▼▼
+        console.error("Firebase Transaction Failed:", error);
+        alert("接続に失敗しました。データベースの権限設定を確認してください。\nエラー: " + error.message);
+    }); // ▲▲▲ ここまで ▲▲▲
     }
  
     function listenToSessionChanges() {
