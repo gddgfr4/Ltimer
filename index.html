@@ -278,6 +278,7 @@
  
     let firebaseApp, database, firestore, athlogTeamId, athlogMemberId;
     let teamMembers = []; // チームメンバーのリストを保持
+    let memberNameMap = {};
     try {
       if (!firebase.apps.length) {
         firebaseApp = firebase.initializeApp(firebaseConfig);
@@ -298,21 +299,36 @@
         shareTitle.textContent = `こんにちは、${athlogMemberId}さん`;
         shareDesc.textContent = 'タイマーを共有するには、相手と同じ「合言葉」を入力してください。';
     }
-    
+
+    // 【変更後】
     async function fetchTeamMembers() {
         if (!firestore || !athlogTeamId) {
             teamMembers = [];
+            memberNameMap = {}; // マップもクリア
             return;
         }
         try {
             const membersSnapshot = await firestore.collection('teams').doc(athlogTeamId).collection('members').get();
-            teamMembers = membersSnapshot.docs.map(doc => doc.id).sort();
+            const membersData = membersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data()?.name || doc.id // nameフィールドがなければIDを使用
+            }));
+            
+            // IDでソート
+            membersData.sort((a, b) => a.id.localeCompare(b.id)); 
+            
+            teamMembers = membersData.map(m => m.id); // IDのリスト
+            memberNameMap = membersData.reduce((map, member) => {
+                map[member.id] = member.name; // IDと名前のマッピングを作成
+                return map;
+            }, {});
+            
         } catch (e) {
             console.error("チームメンバーの取得に失敗しました:", e);
             teamMembers = [];
+            memberNameMap = {};
         }
     }
-
     function ymd(d){
       const date = new Date(d.getTime() - d.getTimezoneOffset()*60000);
       return date.toISOString().slice(0,10);
@@ -331,13 +347,13 @@
             await firestore.runTransaction(async (tx) => {
                 const doc = await tx.get(docRef);
                 const currentFeel = doc.data()?.feel || '';
-                const header = `【Ltimer計測結果 by ${athlogMemberId || 'タイマー'}】\n`;
+                const header = `【Ltimer計測結果 by ${getDisplayName(athlogMemberId) || 'タイマー'}】\n`;
                 const newFeel = currentFeel ? `${currentFeel}\n\n${header}${summaryText}` : `${header}${summaryText}`;
                 tx.set(docRef, { feel: newFeel }, { merge: true });
             });
-            console.log(`AthLogの日誌（${today}）に${targetMemberId}の結果を保存しました。`);
+            console.log(`AthLogの日誌（${today}）に${getDisplayName(targetMemberId)}の結果を保存しました。`);
         } catch (e) {
-            console.error(`AthLog日誌（${targetMemberId}）への書き込みに失敗:`, e);
+            console.error(`AthLog日誌（${getDisplayName(targetMemberId}）への書き込みに失敗:`, e);
             throw e; // エラーを呼び出し元に伝える
         }
     }
@@ -354,7 +370,7 @@
         data.forEach(item => {
             if (!item.laps || item.laps.length === 0) return;
             const memberToLog = item.name;
-            const displayName = memberToLog || 'タイマー ' + item.id;
+            const displayName = getDisplayName(targetMemberId || 'タイマー ' + item.id;
 
             tableHtml += `<thead><tr><th colspan="3">${displayName}</th></tr>`;
             tableHtml += `<tr><th>Lap</th><th>Time</th><th>Cumulative</th></tr></thead><tbody>`;
@@ -399,7 +415,7 @@
         
         pmState.lanes.forEach(lane => {
              const memberToLog = lane.name;
-             const displayName = memberToLog || `レーン ${lane.id}`;
+             const displayName = getDisplayName(memberIdToLog) || `レーン ${lane.id}`;
              tableHtml += `<thead><tr><th colspan="4">${displayName}</th></tr>`;
              tableHtml += `<tr><th>Lap</th><th>Lap Time</th><th>Rep Time</th><th>Pace Diff</th></tr></thead><tbody>`;
              
@@ -440,6 +456,20 @@
             initPacemaker();
         };
     }
+
+
+    // 【変更前】(この関数の定義がない)
+
+// 【変更後】(ユーティリティ関数の後あたりに追加)
+/**
+ * メンバーIDから表示名を取得する（マップに無ければIDをそのまま返す）
+ * @param {string} memId メンバーID
+ * @returns {string} 表示名
+ */
+function getDisplayName(memId){
+  // マップに名前があればそれを返し、なければIDを返す
+  return memberNameMap[memId] || memId;
+}
     /* ==================================
      * 画面要素の取得
      * ================================== */
@@ -564,7 +594,7 @@
  
     // ▼▼▼ この関数全体を置き換えてください ▼▼▼
     function joinSession(isNewSession) {
-        const myName = athlogMemberId || `ゲスト${String(Date.now()).slice(-4)}`;
+        const myName = getDisplayName(athlogMemberId) || `ゲスト${String(Date.now()).slice(-4)}`;
         sessionRef.child('users').transaction(currentUsers => {
             currentUsers = currentUsers || {};
 
@@ -607,7 +637,7 @@
                 sessionRef.child('createdAt').set(firebase.database.ServerValue.TIMESTAMP);
             }
             const myUserRef = sessionRef.child('users').child(userId);
-            myUserRef.onDisconnect().remove();
+            myUserRef.onDisconnect().update({ connected: false });
             listenToSessionChanges();
             showScreen('split');
             initSplit(true);
@@ -761,8 +791,10 @@
         let cum=0; const hist = (sw.laps || []).map((lap,i)=>{cum+=lap; return {n:i+1,lap,cum};}).slice().reverse()
           .map(h=>`<div class="hist-line"><span class="hist-n">${h.n}</span> ${fmt(h.lap)} <span class="hist-cum">(${fmt(h.cum)})</span></div>`).join('') || '<p class="text-xs text-center text-gray-400">ラップ履歴</p>';
         
-        const memberOptions = (teamMembers || []).map(m => `<option value="${m}" ${sw.name === m ? 'selected' : ''}>${m}</option>`).join('');
-
+        const memberOptions = (teamMembers || []).map(memId => 
+            `<option value="${memId}" ${sw.name === memId ? 'selected' : ''}>${getDisplayName(memId)}</option>` // 表示名を getDisplayName で取得
+        ).join('');
+        
         return `<div class="runner-card" id="w-${sw.id}">
           <button data-id="${sw.id}" data-action="delete" class="absolute top-2 right-2 w-6 h-6 bg-gray-300 text-gray-700 rounded-full flex items-center justify-center text-lg font-bold hover:bg-red-500 hover:text-white">×</button>
           <div class="runner-card-header">
@@ -772,7 +804,7 @@
                 ${memberOptions}
               </select>
             ` : `
-              <input type="text" value="${sw.name || 'タイマー ' + (sw.id+1)}" data-id="${sw.id}" class="runner-name-input p-1 bg-gray-100 rounded font-bold">
+              <input type="text" value="${getDisplayName(sw.name) || 'タイマー ' + (sw.id+1)}" data-id="${sw.id}" class="runner-name-input p-1 bg-gray-100 rounded font-bold">
             `}
             <input type="number" data-id="${sw.id}" placeholder="目標(sec)" value="${(sw.target||0)>0?sw.target:''}" class="target-lap-input border-2 rounded">
           </div>
@@ -945,8 +977,10 @@
         container.innerHTML = '';
         document.getElementById('pm-lane-count').textContent = `${laneCount}レーン`;
 
-        const memberOptions = (teamMembers || []).map(m => `<option value="${m}">${m}</option>`).join('');
-
+        const memberOptions = (teamMembers || []).map(memId => 
+            `<option value="${memId}" ${sw.name === memId ? 'selected' : ''}>${getDisplayName(memId)}</option>` // 表示名を getDisplayName で取得
+        ).join('');
+          
         for (let i = 1; i <= laneCount; i++) {
             const selectedMember = (teamMembers && teamMembers[i-1]) ? `selected` : '';
             container.innerHTML += `
@@ -954,7 +988,7 @@
                     ${(athlogTeamId && teamMembers.length > 0) ? `
                       <select data-lane-id="${i}" class="pm-lane-name col-span-2 p-2 border rounded-md">
                         <option value="">-- 選手を選択 --</option>
-                        ${(teamMembers || []).map((m, index) => `<option value="${m}" ${i - 1 === index ? 'selected' : ''}>${m}</option>`).join('')}
+                        ${(teamMembers || []).map(memId => `<option value="${memId}" ${memId === selectedMemberId ? 'selected' : ''}>${getDisplayName(memId)}</option>`).join('')} // 表示名を getDisplayName で取得
                       </select>
                     ` : `
                       <input type="text" value="レーン ${i}" data-lane-id="${i}" class="pm-lane-name col-span-2 p-2 border rounded-md">
