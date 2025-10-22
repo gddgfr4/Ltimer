@@ -353,7 +353,7 @@
             });
             console.log(`AthLogの日誌（${today}）に${getDisplayName(targetMemberId)}の結果を保存しました。`);
         } catch (e) {
-            console.error(`AthLog日誌（${getDisplayName(targetMemberId}）への書き込みに失敗:`, e);
+            console.error(`AthLog日誌（${getDisplayName(targetMemberId)}）への書き込みに失敗:`, e);
             throw e; // エラーを呼び出し元に伝える
         }
     }
