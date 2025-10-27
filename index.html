@@ -293,13 +293,18 @@
     athlogTeamId = urlParams.get('team');
     athlogMemberId = urlParams.get('member');
     
-    if (athlogMemberId) {
-        const shareTitle = document.querySelector('#screen-share h1');
-        const shareDesc = document.querySelector('#screen-share .text-sm');
-        shareTitle.textContent = `こんにちは、${athlogMemberId}さん`;
-        shareDesc.textContent = 'タイマーを共有するには、相手と同じ「合言葉」を入力してください。';
-    }
-
+    // ▼▼▼ 修正: メンバー情報を先に取得して、表示名で挨拶する ▼▼▼
+    (async () => {
+        if (athlogMemberId) {
+            await fetchTeamMembers(); // 先にメンバー情報を取得
+            const myDisplayName = getDisplayName(athlogMemberId) || athlogMemberId; // 自分の表示名を取得
+            const shareTitle = document.querySelector('#screen-share h1');
+            const shareDesc = document.querySelector('#screen-share .text-sm');
+            shareTitle.textContent = `こんにちは、${myDisplayName}さん`; // 表示名で更新
+            shareDesc.textContent = 'タイマーを共有するには、相手と同じ「合言葉」を入力してください。';
+        }
+    })();
+    // ▲▲▲ ここまで修正 ▲▲▲
     // 【変更後】
     async function fetchTeamMembers() {
         if (!firestore || !athlogTeamId) {
@@ -577,8 +582,11 @@ function getDisplayName(memId){
       showScreen('chooser');
     };
  
-    function connectToSession() {
+    async function connectToSession() { // ← async に変更
       if (!database) return alert("共有機能の初期化に失敗しました。");
+      
+      await fetchTeamMembers(); // ★ メンバー情報を先に取得する
+      
       sessionRef = database.ref('sessions/' + sessionPasscode);
       sessionRef.once('value', snapshot => {
           const sessionData = snapshot.val();
@@ -977,11 +985,11 @@ function getDisplayName(memId){
         document.getElementById('pm-lane-count').textContent = `${laneCount}レーン`;
 
         const memberOptions = (teamMembers || []).map(memId => 
-            `<option value="${memId}" ${sw.name === memId ? 'selected' : ''}>${getDisplayName(memId)}</option>` // 表示名を getDisplayName で取得
+            `<option value="${memId}">${getDisplayName(memId)}</option>` // 表示名を getDisplayName で取得
         ).join('');
           
         for (let i = 1; i <= laneCount; i++) {
-            const selectedMember = (teamMembers && teamMembers[i-1]) ? `selected` : '';
+            const selectedMemberId = (teamMembers && teamMembers[i-1]) ? teamMembers[i-1] : '';
             container.innerHTML += `
                 <div class="grid grid-cols-4 gap-2 items-center">
                     ${(athlogTeamId && teamMembers.length > 0) ? `
