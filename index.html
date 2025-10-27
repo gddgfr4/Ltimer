@@ -370,7 +370,7 @@
         data.forEach(item => {
             if (!item.laps || item.laps.length === 0) return;
             const memberToLog = item.name;
-            const displayName = getDisplayName(memberIdToLog) || 'タイマー ' + item.id; // 修正: memberIdToLog を使用し、閉じ括弧を追加
+            const displayName = getDisplayName(memberToLog) || 'タイマー ' + item.id; // 修正: memberIdToLog を使用し、閉じ括弧を追加
             tableHtml += `<thead><tr><th colspan="3">${displayName}</th></tr>`;
             tableHtml += `<tr><th>Lap</th><th>Time</th><th>Cumulative</th></tr></thead><tbody>`;
             
@@ -414,7 +414,7 @@
         
         pmState.lanes.forEach(lane => {
              const memberToLog = lane.name;
-             const displayName = getDisplayName(memberIdToLog) || `レーン ${lane.id}`;
+             const displayName = getDisplayName(memberToLog) || `レーン ${lane.id}`;
              tableHtml += `<thead><tr><th colspan="4">${displayName}</th></tr>`;
              tableHtml += `<tr><th>Lap</th><th>Lap Time</th><th>Rep Time</th><th>Pace Diff</th></tr></thead><tbody>`;
              
